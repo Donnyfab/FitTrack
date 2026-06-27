@@ -1,0 +1,21 @@
+{
+  "name": "Goal",
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": ["build_muscle", "lose_weight", "get_stronger", "improve_consistency"]
+    },
+    "target": { "type": "string" },
+    "deadline": { "type": "string", "format": "date" },
+    "status": {
+      "type": "string",
+      "enum": ["active", "completed", "paused"],
+      "default": "active"
+    },
+    "progress": { "type": "number", "default": 0 },
+    "notes": { "type": "string" }
+  },
+  "required": ["title", "type"]
+}

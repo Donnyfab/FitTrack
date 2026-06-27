@@ -1,0 +1,30 @@
+{
+  "name": "Workout",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "date": { "type": "string", "format": "date" },
+    "muscleGroup": { "type": "string" },
+    "notes": { "type": "string" },
+    "exercises": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reps": { "type": "number" },
+                "weight": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["name", "date"]
+}

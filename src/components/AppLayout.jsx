@@ -21,14 +21,6 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: SettingsIcon, end: false },
 ];
 
-const mobileNavItems = [
-  { to: "/", label: "Home", icon: LayoutDashboard, end: true },
-  { to: "/workouts", label: "Workouts", icon: Dumbbell, end: false },
-  { to: "/exercise", label: "Exercises", icon: Activity, end: false },
-  { to: "/progress", label: "Progress", icon: TrendingUp, end: false },
-  { to: "/calendar", label: "Calendar", icon: CalendarDays, end: false },
-];
-
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const firstName = user?.full_name?.split(" ")[0] || "User";
@@ -98,44 +90,33 @@ export default function AppLayout() {
               FitTrack
             </span>
           </div>
-          <NavLink
-            to="/settings"
-            className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500"
-            aria-label="Open settings"
-          >
-            {initial}
-          </NavLink>
+          <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500">
+              {initial}
+            </div>
         </div>
       </header>
 
       <main className="lg:ml-64 min-h-screen">
-        <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 2xl:px-10 py-6 sm:py-8 pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:pb-12">
+        <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 2xl:px-10 py-6 sm:py-8 pb-28 lg:pb-12">
           <Outlet />
         </div>
       </main>
 
-      <nav
-        className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200/80 bg-white/80 backdrop-blur-xl shadow-[0_-10px_30px_-28px_rgba(15,23,42,0.55)]"
-        aria-label="Primary"
-      >
-        <div className="grid h-[calc(49px+env(safe-area-inset-bottom))] grid-cols-5 items-start px-1.5 pb-[env(safe-area-inset-bottom)] pt-1">
-          {mobileNavItems.map((item) => (
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-neutral-200 z-40">
+        <div className="flex items-center justify-start gap-1 overflow-x-auto h-16 px-2 pb-[env(safe-area-inset-bottom)]">
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium leading-none tracking-normal transition-colors ${
-                  isActive ? "text-[#007AFF]" : "text-neutral-400 hover:text-neutral-600"
+                `min-w-[64px] flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-colors ${
+                  isActive ? "text-neutral-900 bg-neutral-100" : "text-neutral-400"
                 }`
               }
             >
-              {({ isActive }) => (
-                <>
-                  <item.icon className="h-[23px] w-[23px]" strokeWidth={isActive ? 2.25 : 2} />
-                  <span className="truncate text-[10px] leading-none">{item.label}</span>
-                </>
-              )}
+              <item.icon className="w-[18px] h-[18px]" strokeWidth={2} />
+              <span className="text-[10px] font-medium">{item.label}</span>
             </NavLink>
           ))}
         </div>

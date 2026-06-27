@@ -43,23 +43,42 @@ export default function Settings() {
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [unitsSystem, setUnitsSystem] = useState(settings?.units_system || "imperial");
   const [weeklyWorkoutGoal, setWeeklyWorkoutGoal] = useState(settings?.weekly_workout_goal || 4);
-  const [defaultRestTimer, setDefaultRestTimer] = useState(90);
-  const [setSummary, setSetSummary] = useState(true);
-  const [autoSave, setAutoSave] = useState(true);
+  const [defaultRestTimer, setDefaultRestTimer] = useState(settings?.default_rest_timer_seconds || 90);
+  const [setSummary, setSetSummary] = useState(settings?.show_set_summary ?? true);
+  const [autoSave, setAutoSave] = useState(settings?.auto_save_workouts ?? true);
   const [theme, setTheme] = useState(() => normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
   const [saving, setSaving] = useState(false);
   const [notifications, setNotifications] = useState({
-    workoutReminders: true,
-    goalProgress: true,
-    weeklySummary: false,
+    workoutReminders: settings?.notification_workout_reminders ?? true,
+    goalProgress: settings?.notification_goal_progress ?? true,
+    weeklySummary: settings?.notification_weekly_summary ?? false,
   });
 
   useEffect(() => {
     setFullName(user?.full_name || "");
     setUnitsSystem(settings?.units_system || "imperial");
     setWeeklyWorkoutGoal(settings?.weekly_workout_goal || 4);
+    setDefaultRestTimer(settings?.default_rest_timer_seconds || 90);
+    setSetSummary(settings?.show_set_summary ?? true);
+    setAutoSave(settings?.auto_save_workouts ?? true);
     setTheme(normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
-  }, [user?.full_name, settings?.units_system, settings?.weekly_workout_goal, settings?.theme_preference]);
+    setNotifications({
+      workoutReminders: settings?.notification_workout_reminders ?? true,
+      goalProgress: settings?.notification_goal_progress ?? true,
+      weeklySummary: settings?.notification_weekly_summary ?? false,
+    });
+  }, [
+    user?.full_name,
+    settings?.units_system,
+    settings?.weekly_workout_goal,
+    settings?.default_rest_timer_seconds,
+    settings?.show_set_summary,
+    settings?.auto_save_workouts,
+    settings?.theme_preference,
+    settings?.notification_workout_reminders,
+    settings?.notification_goal_progress,
+    settings?.notification_weekly_summary,
+  ]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -79,7 +98,18 @@ export default function Settings() {
     event.preventDefault();
     setSaving(true);
     try {
-      await updateUserProfile({ fullName, unitsSystem, weeklyWorkoutGoal, themePreference: theme });
+      await updateUserProfile({
+        fullName,
+        unitsSystem,
+        weeklyWorkoutGoal,
+        themePreference: theme,
+        defaultRestTimerSeconds: defaultRestTimer,
+        showSetSummary: setSummary,
+        autoSaveWorkouts: autoSave,
+        notificationWorkoutReminders: notifications.workoutReminders,
+        notificationGoalProgress: notifications.goalProgress,
+        notificationWeeklySummary: notifications.weeklySummary,
+      });
       toast({ title: "Settings saved", description: "Your profile data was updated." });
     } catch (error) {
       toast({

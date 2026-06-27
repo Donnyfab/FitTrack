@@ -15,7 +15,7 @@ import {
 
 const emptyGoal = {
   title: "",
-  type: "improve_consistency",
+  type: "workout_consistency",
   target: "",
   deadline: "",
   status: "active",

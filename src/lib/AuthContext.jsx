@@ -183,7 +183,18 @@ export const AuthProvider = ({ children }) => {
     return savedUserData;
   };
 
-  const updateUserProfile = async ({ fullName, unitsSystem, weeklyWorkoutGoal, themePreference }) => {
+  const updateUserProfile = async ({
+    fullName,
+    unitsSystem,
+    weeklyWorkoutGoal,
+    themePreference,
+    defaultRestTimerSeconds,
+    showSetSummary,
+    autoSaveWorkouts,
+    notificationWorkoutReminders,
+    notificationGoalProgress,
+    notificationWeeklySummary,
+  }) => {
     if (!user?.id) {
       throw new Error('Authentication required');
     }
@@ -197,6 +208,15 @@ export const AuthProvider = ({ children }) => {
       weekly_workout_goal: normalizedWeeklyGoal,
       theme_preference: normalizedTheme,
     };
+
+    if (defaultRestTimerSeconds != null) {
+      settingsPayload.default_rest_timer_seconds = Math.min(600, Math.max(15, Number(defaultRestTimerSeconds) || 90));
+    }
+    if (showSetSummary != null) settingsPayload.show_set_summary = Boolean(showSetSummary);
+    if (autoSaveWorkouts != null) settingsPayload.auto_save_workouts = Boolean(autoSaveWorkouts);
+    if (notificationWorkoutReminders != null) settingsPayload.notification_workout_reminders = Boolean(notificationWorkoutReminders);
+    if (notificationGoalProgress != null) settingsPayload.notification_goal_progress = Boolean(notificationGoalProgress);
+    if (notificationWeeklySummary != null) settingsPayload.notification_weekly_summary = Boolean(notificationWeeklySummary);
 
     const [{ error: profileError }, settingsResult] = await Promise.all([
       supabase
@@ -217,7 +237,18 @@ export const AuthProvider = ({ children }) => {
     if (profileError) throw new Error(profileError.message);
     if (settingsResult.error) {
       const message = settingsResult.error.message || '';
-      if (message.includes('theme_preference') || settingsResult.error.code === 'PGRST204') {
+      if (
+        settingsResult.error.code === 'PGRST204' ||
+        [
+          'theme_preference',
+          'default_rest_timer_seconds',
+          'show_set_summary',
+          'auto_save_workouts',
+          'notification_workout_reminders',
+          'notification_goal_progress',
+          'notification_weekly_summary',
+        ].some((column) => message.includes(column))
+      ) {
         const { error: retrySettingsError } = await supabase
           .from('user_settings')
           .upsert(

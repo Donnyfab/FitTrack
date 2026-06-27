@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { calculateWorkoutVolume, formatDateLong } from "@/lib/workoutUtils";
 import { countSets } from "@/lib/fittrackDemoData";
 import {
@@ -26,11 +27,13 @@ const formatTimer = (seconds) => {
 export default function WorkoutDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { settings } = useAuth();
   const [workout, setWorkout] = useState(null);
   const [loggedExercises, setLoggedExercises] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workoutSeconds, setWorkoutSeconds] = useState(0);
-  const [restSeconds, setRestSeconds] = useState(90);
+  const defaultRestSeconds = Number(settings?.default_rest_timer_seconds) || 90;
+  const [restSeconds, setRestSeconds] = useState(defaultRestSeconds);
   const [restPaused, setRestPaused] = useState(false);
   const [favoriteExercises, setFavoriteExercises] = useState([]);
 
@@ -44,18 +47,26 @@ export default function WorkoutDetail() {
   }, []);
 
   useEffect(() => {
+    setRestSeconds(defaultRestSeconds);
+  }, [defaultRestSeconds]);
+
+  useEffect(() => {
     if (restPaused) return undefined;
     const interval = window.setInterval(() => {
-      setRestSeconds((value) => (value > 0 ? value - 1 : 90));
+      setRestSeconds((value) => (value > 0 ? value - 1 : defaultRestSeconds));
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [restPaused]);
+  }, [defaultRestSeconds, restPaused]);
 
   const loadWorkout = async () => {
     try {
-      const data = await base44.entities.Workout.get(id);
+      const [data, savedExercises] = await Promise.all([
+        base44.entities.Workout.get(id),
+        base44.entities.UserExercise.filter({ isFavorite: true }, "name", 500),
+      ]);
       setWorkout(data);
       setLoggedExercises(data.exercises || []);
+      setFavoriteExercises(savedExercises.map((exercise) => exercise.name));
     } catch {
       setWorkout(null);
       setLoggedExercises([]);
@@ -70,9 +81,18 @@ export default function WorkoutDetail() {
     navigate("/workouts");
   };
 
+  const saveExercises = async (nextExercises, extra = {}) => {
+    if (settings?.auto_save_workouts === false && !extra.forceSave) return;
+    const { forceSave, ...payload } = extra;
+    try {
+      await base44.entities.Workout.update(id, { exercises: nextExercises, ...payload });
+    } catch (error) {
+      console.error("Workout save failed:", error);
+    }
+  };
+
   const toggleSet = (exerciseIndex, setIndex) => {
-    setLoggedExercises((items) =>
-      items.map((exercise, currentExerciseIndex) =>
+    const nextExercises = loggedExercises.map((exercise, currentExerciseIndex) =>
         currentExerciseIndex === exerciseIndex
           ? {
               ...exercise,
@@ -81,33 +101,68 @@ export default function WorkoutDetail() {
               ),
             }
           : exercise
-      )
     );
+    setLoggedExercises(nextExercises);
+    saveExercises(nextExercises);
   };
 
   const addSet = (exerciseIndex) => {
-    setLoggedExercises((items) =>
-      items.map((exercise, currentExerciseIndex) =>
+    const nextExercises = loggedExercises.map((exercise, currentExerciseIndex) =>
         currentExerciseIndex === exerciseIndex
           ? { ...exercise, sets: [...(exercise.sets || []), { weight: 0, reps: 0, completed: false }] }
           : exercise
-      )
     );
+    setLoggedExercises(nextExercises);
+    saveExercises(nextExercises);
   };
 
   const addExercise = () => {
-    setLoggedExercises((items) => [
-      ...items,
+    const nextExercises = [
+      ...loggedExercises,
       { name: "New Exercise", sets: [{ weight: 0, reps: 0, completed: false }] },
-    ]);
+    ];
+    setLoggedExercises(nextExercises);
+    saveExercises(nextExercises);
   };
 
-  const toggleFavorite = (exerciseName) => {
+  const finishWorkout = async () => {
+    const nextExercises = loggedExercises.map((exercise) => ({
+      ...exercise,
+      sets: (exercise.sets || []).map((set) => ({ ...set, completed: true })),
+    }));
+    setLoggedExercises(nextExercises);
+    await saveExercises(nextExercises, { status: "completed", forceSave: true });
+    navigate("/workouts");
+  };
+
+  const toggleFavorite = async (exerciseName) => {
+    const currentFavorite = favoriteExercises.includes(exerciseName);
     setFavoriteExercises((items) =>
       items.includes(exerciseName)
         ? items.filter((item) => item !== exerciseName)
         : [...items, exerciseName]
     );
+    const workoutExercise = loggedExercises.find((exercise) => exercise.name === exerciseName);
+    if (!workoutExercise) return;
+    try {
+      await base44.entities.UserExercise.upsert(
+        {
+          name: exerciseName,
+          muscleGroup: workout.muscleGroup || "Full Body",
+          icon: (workout.muscleGroup || "Full Body").toLowerCase(),
+          tip: "",
+          favorite: !currentFavorite,
+          custom: false,
+        },
+        { onConflict: "user_id,name" }
+      );
+    } catch {
+      setFavoriteExercises((items) =>
+        currentFavorite
+          ? [...items, exerciseName]
+          : items.filter((item) => item !== exerciseName)
+      );
+    }
   };
 
   const displayWorkout = useMemo(
@@ -227,7 +282,7 @@ export default function WorkoutDetail() {
               {nextExercise ? `Next: ${nextExercise.name}. Rest 90 seconds, then match last set quality.` : "All planned sets are checked off."}
             </p>
           </div>
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
+          <button onClick={finishWorkout} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
             <Check className="w-4 h-4" />
             Finish Workout
           </button>

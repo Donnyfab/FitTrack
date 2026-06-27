@@ -6,7 +6,15 @@ import { supabase } from '@/lib/supabase';
 
 const SORT_COLUMN_MAP = {
   date: 'date',
+  recorded_at: 'recorded_at',
   created_date: 'created_at',
+};
+
+const FILTER_COLUMN_MAP = {
+  muscleGroup: 'muscle_group',
+  isFavorite: 'is_favorite',
+  isCustom: 'is_custom',
+  recordedAt: 'recorded_at',
 };
 
 function parseSort(sortStr) {
@@ -28,6 +36,10 @@ function mapWorkout(row) {
     muscleGroup: row.muscle_group,
     notes: row.notes,
     exercises: row.exercises ?? [],
+    status: row.status || 'completed',
+    favorite: Boolean(row.favorite),
+    template: Boolean(row.template),
+    calories: row.calories,
     created_date: row.created_at,
   };
 }
@@ -48,25 +60,75 @@ function mapGoal(row) {
 }
 
 function toDbWorkout(data) {
-  return {
-    name: data.name,
-    date: data.date,
-    muscle_group: data.muscleGroup || null,
-    notes: data.notes || null,
-    exercises: data.exercises ?? [],
-  };
+  const row = {};
+  if ('name' in data) row.name = data.name;
+  if ('date' in data) row.date = data.date;
+  if ('muscleGroup' in data) row.muscle_group = data.muscleGroup || null;
+  if ('notes' in data) row.notes = data.notes || null;
+  if ('exercises' in data) row.exercises = data.exercises ?? [];
+  if ('status' in data) row.status = data.status || 'completed';
+  if ('favorite' in data) row.favorite = Boolean(data.favorite);
+  if ('template' in data) row.template = Boolean(data.template);
+  if ('calories' in data) row.calories = data.calories === '' || data.calories == null ? null : Number(data.calories);
+  return row;
 }
 
 function toDbGoal(data) {
+  const row = {};
+  if ('title' in data) row.title = data.title;
+  if ('type' in data) row.type = data.type;
+  if ('target' in data) row.target = data.target || null;
+  if ('deadline' in data) row.deadline = data.deadline || null;
+  if ('status' in data) row.status = data.status || 'active';
+  if ('progress' in data) row.progress = Number(data.progress) || 0;
+  if ('notes' in data) row.notes = data.notes || null;
+  return row;
+}
+
+function mapUserExercise(row) {
+  if (!row) return row;
   return {
-    title: data.title,
-    type: data.type,
-    target: data.target || null,
-    deadline: data.deadline || null,
-    status: data.status || 'active',
-    progress: Number(data.progress) || 0,
-    notes: data.notes || null,
+    id: row.id,
+    name: row.name,
+    muscleGroup: row.muscle_group,
+    icon: row.icon,
+    tip: row.form_tips,
+    favorite: Boolean(row.is_favorite),
+    custom: Boolean(row.is_custom),
+    created_date: row.created_at,
   };
+}
+
+function toDbUserExercise(data) {
+  const row = {};
+  if ('name' in data) row.name = data.name;
+  if ('muscleGroup' in data) row.muscle_group = data.muscleGroup;
+  if ('icon' in data) row.icon = data.icon || null;
+  if ('tip' in data) row.form_tips = data.tip || null;
+  if ('favorite' in data) row.is_favorite = Boolean(data.favorite);
+  if ('custom' in data) row.is_custom = Boolean(data.custom);
+  return row;
+}
+
+function mapBodyStat(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    recordedAt: row.recorded_at,
+    weight: row.weight == null ? null : Number(row.weight),
+    bodyFatPercentage: row.body_fat_percentage == null ? null : Number(row.body_fat_percentage),
+    notes: row.notes,
+    created_date: row.created_at,
+  };
+}
+
+function toDbBodyStat(data) {
+  const row = {};
+  if ('recordedAt' in data) row.recorded_at = data.recordedAt;
+  if ('weight' in data) row.weight = data.weight === '' || data.weight == null ? null : Number(data.weight);
+  if ('bodyFatPercentage' in data) row.body_fat_percentage = data.bodyFatPercentage === '' || data.bodyFatPercentage == null ? null : Number(data.bodyFatPercentage);
+  if ('notes' in data) row.notes = data.notes || null;
+  return row;
 }
 
 async function requireUserId() {
@@ -102,7 +164,7 @@ function createEntity(table, mapRow, toDb) {
       let query = supabase.from(table).select('*').eq('user_id', userId);
 
       Object.entries(filters).forEach(([key, value]) => {
-        query = query.eq(key, value);
+        query = query.eq(FILTER_COLUMN_MAP[key] || key, value);
       });
 
       const { data, error } = await query
@@ -132,6 +194,18 @@ function createEntity(table, mapRow, toDb) {
       const { data, error } = await supabase
         .from(table)
         .insert({ ...toDb(payload), user_id: userId })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return mapRow(data);
+    },
+
+    async upsert(payload, options = {}) {
+      const userId = await requireUserId();
+      const { data, error } = await supabase
+        .from(table)
+        .upsert({ ...toDb(payload), user_id: userId }, options)
         .select('*')
         .single();
 
@@ -275,5 +349,7 @@ export const base44 = {
   entities: {
     Workout: createEntity('workouts', mapWorkout, toDbWorkout),
     Goal: createEntity('goals', mapGoal, toDbGoal),
+    UserExercise: createEntity('user_exercises', mapUserExercise, toDbUserExercise),
+    BodyStat: createEntity('body_stats', mapBodyStat, toDbBodyStat),
   },
 };

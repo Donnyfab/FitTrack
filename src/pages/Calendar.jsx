@@ -35,6 +35,12 @@ function buildCalendarDays(activeMonth) {
   });
 }
 
+function eventTone(type) {
+  if (type === "missed") return "bg-neutral-400";
+  if (type === "scheduled" || type === "planned") return "bg-neutral-300";
+  return "bg-neutral-900";
+}
+
 export default function CalendarPage() {
   const { settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
@@ -59,7 +65,7 @@ export default function CalendarPage() {
       date: workout.date,
       name: workout.name,
       muscleGroup: workout.muscleGroup || "Workout",
-      type: "completed",
+      type: workout.status || "completed",
       exercises: workout.exercises?.length || 0,
       volume: calculateWorkoutVolume(workout),
       workout,
@@ -143,6 +149,8 @@ export default function CalendarPage() {
             <h2 className="text-lg font-semibold text-neutral-900">{monthLabel(activeMonth)}</h2>
             <div className="flex items-center gap-3 text-xs text-neutral-500">
               <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neutral-900" /> Completed</span>
+              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neutral-300" /> Scheduled</span>
+              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neutral-400" /> Missed</span>
             </div>
           </div>
 
@@ -179,7 +187,7 @@ export default function CalendarPage() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1">
                     {dayEvents.slice(0, 3).map((event, index) => (
-                      <span key={`${event.name}-${index}`} className="h-1.5 w-1.5 rounded-full bg-neutral-900" />
+                      <span key={`${event.name}-${index}`} className={`h-1.5 w-1.5 rounded-full ${eventTone(event.type)}`} />
                     ))}
                   </div>
                   {isPastRest && <p className="mt-3 text-[10px] text-neutral-400">Rest</p>}

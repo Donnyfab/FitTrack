@@ -42,6 +42,7 @@ export default function Dashboard() {
   const { user, settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [goals, setGoals] = useState([]);
+  const [bodyStats, setBodyStats] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,12 +51,14 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      const [w, g] = await Promise.all([
+      const [w, g, b] = await Promise.all([
         base44.entities.Workout.list("-date", 100),
         base44.entities.Goal.filter({ status: "active" }, "-created_date", 10),
+        base44.entities.BodyStat.list("-recorded_at", 12),
       ]);
       setWorkouts(w);
       setGoals(g);
+      setBodyStats(b);
     } catch (e) {
       console.error(e);
     } finally {
@@ -91,6 +94,7 @@ export default function Dashboard() {
   const goalProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
   const todayWorkout = workouts.find((workout) => workout.date === todayKey);
   const recentWorkouts = workouts.slice(0, 4);
+  const latestBodyStat = bodyStats[0];
   const firstName =
     user?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "there";
 
@@ -209,10 +213,27 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
             <HeartPulse className="w-4 h-4 text-neutral-300" />
           </div>
-          <div className="rounded-xl bg-neutral-50 p-5 text-center">
-            <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
-            <p className="text-xs text-neutral-500 mt-1">Weight and body fat trends will appear after you add body stats.</p>
-          </div>
+          {latestBodyStat ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-500">Weight</p>
+                <p className="text-xl font-semibold text-neutral-900 mt-1">
+                  {latestBodyStat.weight == null ? "—" : `${latestBodyStat.weight} lb`}
+                </p>
+              </div>
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-500">Body fat</p>
+                <p className="text-xl font-semibold text-neutral-900 mt-1">
+                  {latestBodyStat.bodyFatPercentage == null ? "—" : `${latestBodyStat.bodyFatPercentage}%`}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-neutral-50 p-5 text-center">
+              <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
+              <p className="text-xs text-neutral-500 mt-1">Weight and body fat trends will appear after you add body stats.</p>
+            </div>
+          )}
         </div>
       </div>
 

@@ -3,10 +3,10 @@ export const MUSCLE_GROUPS = [
 ];
 
 export const GOAL_TYPES = [
-  { value: "build_muscle", label: "Build Muscle" },
-  { value: "lose_weight", label: "Lose Weight" },
-  { value: "get_stronger", label: "Get Stronger" },
-  { value: "improve_consistency", label: "Improve Consistency" },
+  { value: "workout_consistency", label: "Workout Consistency" },
+  { value: "strength_goal", label: "Strength Goal" },
+  { value: "weight_goal", label: "Weight Goal" },
+  { value: "body_fat_goal", label: "Body Fat Goal" },
 ];
 
 export const GOAL_STATUSES = [

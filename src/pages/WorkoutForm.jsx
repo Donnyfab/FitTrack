@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { MUSCLE_GROUPS } from "@/lib/constants";
 import { ArrowLeft, X, Trash2 } from "lucide-react";
 
-const emptyExercise = () => ({ name: "", sets: [{ reps: "", weight: "" }] });
+const emptyExercise = () => ({ name: "", sets: [{ reps: "", weight: "", completed: false }] });
 
 export default function WorkoutForm() {
   const { id } = useParams();
@@ -16,6 +16,10 @@ export default function WorkoutForm() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [muscleGroup, setMuscleGroup] = useState("");
   const [notes, setNotes] = useState("");
+  const [status, setStatus] = useState("completed");
+  const [calories, setCalories] = useState("");
+  const [favorite, setFavorite] = useState(false);
+  const [template, setTemplate] = useState(false);
   const [exercises, setExercises] = useState([emptyExercise()]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -29,9 +33,13 @@ export default function WorkoutForm() {
       setDate(workout.date);
       setMuscleGroup(workout.muscleGroup || "");
       setNotes(workout.notes || "");
+      setStatus(workout.status || "completed");
+      setCalories(workout.calories?.toString() || "");
+      setFavorite(Boolean(workout.favorite));
+      setTemplate(Boolean(workout.template));
       setExercises(workout.exercises?.length ? workout.exercises.map((ex) => ({
         name: ex.name || "",
-        sets: ex.sets?.length ? ex.sets.map((s) => ({ reps: s.reps?.toString() || "", weight: s.weight?.toString() || "" })) : [{ reps: "", weight: "" }],
+        sets: ex.sets?.length ? ex.sets.map((s) => ({ reps: s.reps?.toString() || "", weight: s.weight?.toString() || "", completed: Boolean(s.completed) })) : [{ reps: "", weight: "", completed: false }],
       })) : [emptyExercise()]);
     } finally { setLoading(false); }
   };
@@ -39,7 +47,7 @@ export default function WorkoutForm() {
   const addExercise = () => setExercises([...exercises, emptyExercise()]);
   const removeExercise = (idx) => setExercises(exercises.filter((_, i) => i !== idx));
   const updateExerciseName = (idx, value) => setExercises(exercises.map((ex, i) => (i === idx ? { ...ex, name: value } : ex)));
-  const addSet = (exIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: [...ex.sets, { reps: "", weight: "" }] } : ex)));
+  const addSet = (exIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: [...ex.sets, { reps: "", weight: "", completed: false }] } : ex)));
   const removeSet = (exIdx, setIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.filter((_, j) => j !== setIdx) } : ex)));
   const updateSet = (exIdx, setIdx, field, value) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.map((s, j) => (j === setIdx ? { ...s, [field]: value } : s)) } : ex)));
 
@@ -47,10 +55,10 @@ export default function WorkoutForm() {
     e.preventDefault();
     setSaving(true);
     const data = {
-      name, date, muscleGroup, notes,
+      name, date, muscleGroup, notes, status, calories, favorite, template,
       exercises: exercises.filter((ex) => ex.name.trim()).map((ex) => ({
         name: ex.name,
-        sets: ex.sets.filter((s) => s.reps || s.weight).map((s) => ({ reps: Number(s.reps) || 0, weight: Number(s.weight) || 0 })),
+        sets: ex.sets.filter((s) => s.reps || s.weight).map((s) => ({ reps: Number(s.reps) || 0, weight: Number(s.weight) || 0, completed: Boolean(s.completed) })),
       })),
     };
     try {
@@ -84,6 +92,20 @@ export default function WorkoutForm() {
           <div className="grid grid-cols-2 gap-4">
             <div><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="h-11" /></div>
             <div><label className={labelClass}>Muscle Group</label><select value={muscleGroup} onChange={(e) => setMuscleGroup(e.target.value)} className={selectClass}><option value="">Select...</option>{MUSCLE_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className={labelClass}>Status</label><select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}><option value="completed">Completed</option><option value="scheduled">Scheduled</option><option value="planned">Planned</option><option value="missed">Missed</option></select></div>
+            <div><label className={labelClass}>Calories</label><Input type="number" min="0" value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="Optional" className="h-11" /></div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center justify-between rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700">
+              Favorite
+              <input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)} className="h-4 w-4 rounded border-neutral-300 accent-neutral-900" />
+            </label>
+            <label className="flex items-center justify-between rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700">
+              Save as template
+              <input type="checkbox" checked={template} onChange={(e) => setTemplate(e.target.checked)} className="h-4 w-4 rounded border-neutral-300 accent-neutral-900" />
+            </label>
           </div>
         </div>
         <div>

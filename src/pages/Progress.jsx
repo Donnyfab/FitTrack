@@ -44,8 +44,15 @@ const tooltipStyle = {
 
 export default function Progress() {
   const [workouts, setWorkouts] = useState([]);
+  const [bodyStats, setBodyStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Overview");
+  const [bodyStatForm, setBodyStatForm] = useState({
+    recordedAt: new Date().toISOString().split("T")[0],
+    weight: "",
+    bodyFatPercentage: "",
+    notes: "",
+  });
 
   useEffect(() => {
     loadWorkouts();
@@ -53,10 +60,28 @@ export default function Progress() {
 
   const loadWorkouts = async () => {
     try {
-      setWorkouts(await base44.entities.Workout.list("-date", 500));
+      const [workoutRows, bodyStatRows] = await Promise.all([
+        base44.entities.Workout.list("-date", 500),
+        base44.entities.BodyStat.list("-recorded_at", 100),
+      ]);
+      setWorkouts(workoutRows);
+      setBodyStats(bodyStatRows);
     } finally {
       setLoading(false);
     }
+  };
+
+  const saveBodyStat = async (event) => {
+    event.preventDefault();
+    await base44.entities.BodyStat.upsert(bodyStatForm, { onConflict: "user_id,recorded_at" });
+    setBodyStatForm({
+      recordedAt: new Date().toISOString().split("T")[0],
+      weight: "",
+      bodyFatPercentage: "",
+      notes: "",
+    });
+    const bodyStatRows = await base44.entities.BodyStat.list("-recorded_at", 100);
+    setBodyStats(bodyStatRows);
   };
 
   if (loading) {
@@ -91,6 +116,11 @@ export default function Progress() {
   const hasVolumeData = weeklyVolume.some((item) => Number(item.volume) > 0);
   const hasMuscleData = muscleBreakdown.length > 0;
   const hasStrengthData = strengthData.length > 0;
+  const bodyStatsChartData = [...bodyStats].reverse().map((stat) => ({
+    recordedAt: stat.recordedAt,
+    weight: stat.weight,
+    bodyFat: stat.bodyFatPercentage,
+  }));
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -252,17 +282,61 @@ export default function Progress() {
       )}
 
       {activeTab === "Body Stats" && (
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-5">
           <div className="flex items-center gap-2 mb-4">
             <Target className="w-4 h-4 text-neutral-400" />
             <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
           </div>
-          <div className="flex h-[320px] items-center justify-center rounded-xl bg-neutral-50 text-center">
-            <div>
-              <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
-              <p className="mt-1 text-xs text-neutral-500">Weight and body fat charts will appear after body stats are added.</p>
+          <form onSubmit={saveBodyStat} className="grid gap-3 md:grid-cols-[160px_1fr_1fr_auto]">
+            <input
+              type="date"
+              value={bodyStatForm.recordedAt}
+              onChange={(event) => setBodyStatForm({ ...bodyStatForm, recordedAt: event.target.value })}
+              className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+              required
+            />
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={bodyStatForm.weight}
+              onChange={(event) => setBodyStatForm({ ...bodyStatForm, weight: event.target.value })}
+              placeholder="Weight"
+              className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+            />
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={bodyStatForm.bodyFatPercentage}
+              onChange={(event) => setBodyStatForm({ ...bodyStatForm, bodyFatPercentage: event.target.value })}
+              placeholder="Body fat %"
+              className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+            />
+            <button type="submit" className="h-10 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
+              Save
+            </button>
+          </form>
+          {bodyStatsChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart data={bodyStatsChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                <XAxis dataKey="recordedAt" stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Line type="monotone" dataKey="weight" stroke="#171717" strokeWidth={2} dot={{ fill: "#171717", r: 3 }} />
+                <Line type="monotone" dataKey="bodyFat" stroke="#a3a3a3" strokeWidth={2} dot={{ fill: "#a3a3a3", r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-[320px] items-center justify-center rounded-xl bg-neutral-50 text-center">
+              <div>
+                <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
+                <p className="mt-1 text-xs text-neutral-500">Weight and body fat charts will appear after body stats are added.</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

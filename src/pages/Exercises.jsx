@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { base44 } from "@/api/base44Client";
 import {
   Activity,
   Dumbbell,
@@ -20,6 +21,7 @@ const iconForGroup = (group) => {
 
 export default function Exercises() {
   const [exercises, setExercises] = useState(exerciseCatalog);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
   const [activeCategory, setActiveCategory] = useState("Chest");
   const [query, setQuery] = useState("");
@@ -27,6 +29,28 @@ export default function Exercises() {
   const [selectedForWorkout, setSelectedForWorkout] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", muscleGroup: "Chest", tip: "" });
+
+  useEffect(() => {
+    loadExercises();
+  }, []);
+
+  const mergeExercises = (savedExercises) => {
+    const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
+    const catalog = exerciseCatalog.map((exercise) => ({ ...exercise, ...(savedByName.get(exercise.name) || {}) }));
+    const custom = savedExercises.filter((exercise) => !exerciseCatalog.some((item) => item.name === exercise.name));
+    return [...custom, ...catalog];
+  };
+
+  const loadExercises = async () => {
+    try {
+      const savedExercises = await base44.entities.UserExercise.list("name", 500);
+      const merged = mergeExercises(savedExercises);
+      setExercises(merged);
+      setSelectedExercise((current) => merged.find((exercise) => exercise.name === current?.name) || merged[0] || null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filtered = useMemo(
     () =>
@@ -44,18 +68,29 @@ export default function Exercises() {
     [activeCategory, activeTab, exercises, query]
   );
 
-  const toggleFavorite = (exerciseName) => {
+  const toggleFavorite = async (exerciseName) => {
+    const current = exercises.find((exercise) => exercise.name === exerciseName);
+    if (!current) return;
+    const nextFavorite = !current.favorite;
     setExercises((items) =>
       items.map((exercise) =>
-        exercise.name === exerciseName ? { ...exercise, favorite: !exercise.favorite } : exercise
+        exercise.name === exerciseName ? { ...exercise, favorite: nextFavorite } : exercise
       )
     );
     if (selectedExercise?.name === exerciseName) {
-      setSelectedExercise((exercise) => ({ ...exercise, favorite: !exercise.favorite }));
+      setSelectedExercise((exercise) => ({ ...exercise, favorite: nextFavorite }));
+    }
+    try {
+      await base44.entities.UserExercise.upsert(
+        { ...current, favorite: nextFavorite, custom: current.custom || false },
+        { onConflict: "user_id,name" }
+      );
+    } catch {
+      loadExercises();
     }
   };
 
-  const createExercise = (event) => {
+  const createExercise = async (event) => {
     event.preventDefault();
     const nextExercise = {
       name: form.name,
@@ -65,9 +100,10 @@ export default function Exercises() {
       custom: true,
       tip: form.tip || "Add notes after your first completed workout.",
     };
-    setExercises((items) => [nextExercise, ...items]);
-    setSelectedExercise(nextExercise);
-    setActiveCategory(nextExercise.muscleGroup);
+    const savedExercise = await base44.entities.UserExercise.upsert(nextExercise, { onConflict: "user_id,name" });
+    setExercises((items) => [savedExercise, ...items.filter((item) => item.name !== savedExercise.name)]);
+    setSelectedExercise(savedExercise);
+    setActiveCategory(savedExercise.muscleGroup);
     setActiveTab("My Exercises");
     setForm({ name: "", muscleGroup: "Chest", tip: "" });
     setShowCreate(false);
@@ -139,6 +175,11 @@ export default function Exercises() {
 
       <div className="grid items-start gap-4 xl:grid-cols-[1fr_420px]">
         <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {loading && (
+            <div className="col-span-full rounded-2xl bg-neutral-50 p-6 text-center text-sm text-neutral-500">
+              Loading exercises...
+            </div>
+          )}
           {filtered.map((exercise) => {
             const Icon = iconForGroup(exercise.muscleGroup);
             const selected = selectedExercise?.name === exercise.name;

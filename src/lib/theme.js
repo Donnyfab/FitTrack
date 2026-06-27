@@ -8,8 +8,8 @@ export function normalizeThemePreference(value) {
 }
 
 export function getStoredThemePreference() {
-  if (typeof window === "undefined") return "system";
-  return normalizeThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+  if (typeof window === "undefined") return "light";
+  return normalizeThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY) || "light");
 }
 
 export function resolveThemePreference(preference) {

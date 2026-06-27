@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
+import { applyThemePreference, getStoredThemePreference, normalizeThemePreference } from "@/lib/theme";
 import { toast } from "@/hooks/use-toast";
 import {
   Bell,
@@ -45,7 +46,7 @@ export default function Settings() {
   const [defaultRestTimer, setDefaultRestTimer] = useState(90);
   const [setSummary, setSetSummary] = useState(true);
   const [autoSave, setAutoSave] = useState(true);
-  const [theme, setTheme] = useState("System");
+  const [theme, setTheme] = useState(() => normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
   const [saving, setSaving] = useState(false);
   const [notifications, setNotifications] = useState({
     workoutReminders: true,
@@ -57,13 +58,28 @@ export default function Settings() {
     setFullName(user?.full_name || "");
     setUnitsSystem(settings?.units_system || "imperial");
     setWeeklyWorkoutGoal(settings?.weekly_workout_goal || 4);
-  }, [user?.full_name, settings?.units_system, settings?.weekly_workout_goal]);
+    setTheme(normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
+  }, [user?.full_name, settings?.units_system, settings?.weekly_workout_goal, settings?.theme_preference]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = () => {
+      if (theme === "system") applyThemePreference("system");
+    };
+    media.addEventListener("change", handleSystemThemeChange);
+    return () => media.removeEventListener("change", handleSystemThemeChange);
+  }, [theme]);
+
+  const handleThemeChange = (nextTheme) => {
+    const normalized = applyThemePreference(nextTheme);
+    setTheme(normalized);
+  };
 
   const handleSave = async (event) => {
     event.preventDefault();
     setSaving(true);
     try {
-      await updateUserProfile({ fullName, unitsSystem, weeklyWorkoutGoal });
+      await updateUserProfile({ fullName, unitsSystem, weeklyWorkoutGoal, themePreference: theme });
       toast({ title: "Settings saved", description: "Your profile data was updated." });
     } catch (error) {
       toast({
@@ -183,17 +199,23 @@ export default function Settings() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className={labelClass} htmlFor="theme">Theme</label>
-                <select
-                  id="theme"
-                  value={theme}
-                  onChange={(event) => setTheme(event.target.value)}
-                  className={inputClass}
-                >
-                  <option>System</option>
-                  <option>Light</option>
-                  <option>Dark</option>
-                </select>
+                <p className={labelClass} id="theme-label">Theme</p>
+                <div className="grid grid-cols-3 gap-2 rounded-lg bg-neutral-100 p-1" role="radiogroup" aria-labelledby="theme-label">
+                  {["system", "light", "dark"].map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={theme === option}
+                      onClick={() => handleThemeChange(option)}
+                      className={`h-9 rounded-md text-sm font-medium capitalize transition-colors ${
+                        theme === option ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="mt-4 space-y-3">

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { seedSampleDataIfNeeded } from '@/lib/seedData';
+import { applyThemePreference, getStoredThemePreference, normalizeThemePreference } from '@/lib/theme';
 
 const AuthContext = createContext(null);
 
@@ -83,6 +84,10 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    applyThemePreference(settings?.theme_preference || getStoredThemePreference());
+  }, [settings?.theme_preference]);
 
   const applySession = useCallback(async (session) => {
     if (session?.user) {
@@ -178,14 +183,22 @@ export const AuthProvider = ({ children }) => {
     return savedUserData;
   };
 
-  const updateUserProfile = async ({ fullName, unitsSystem, weeklyWorkoutGoal }) => {
+  const updateUserProfile = async ({ fullName, unitsSystem, weeklyWorkoutGoal, themePreference }) => {
     if (!user?.id) {
       throw new Error('Authentication required');
     }
 
     const normalizedWeeklyGoal = Math.min(14, Math.max(1, Number(weeklyWorkoutGoal) || 1));
+    const normalizedTheme = normalizeThemePreference(themePreference || getStoredThemePreference());
 
-    const [{ error: profileError }, { error: settingsError }] = await Promise.all([
+    const settingsPayload = {
+      user_id: user.id,
+      units_system: unitsSystem,
+      weekly_workout_goal: normalizedWeeklyGoal,
+      theme_preference: normalizedTheme,
+    };
+
+    const [{ error: profileError }, settingsResult] = await Promise.all([
       supabase
         .from('profiles')
         .upsert(
@@ -198,18 +211,30 @@ export const AuthProvider = ({ children }) => {
         ),
       supabase
         .from('user_settings')
-        .upsert(
-          {
-            user_id: user.id,
-            units_system: unitsSystem,
-            weekly_workout_goal: normalizedWeeklyGoal,
-          },
-          { onConflict: 'user_id' }
-        ),
+        .upsert(settingsPayload, { onConflict: 'user_id' }),
     ]);
 
     if (profileError) throw new Error(profileError.message);
-    if (settingsError) throw new Error(settingsError.message);
+    if (settingsResult.error) {
+      const message = settingsResult.error.message || '';
+      if (message.includes('theme_preference') || settingsResult.error.code === 'PGRST204') {
+        const { error: retrySettingsError } = await supabase
+          .from('user_settings')
+          .upsert(
+            {
+              user_id: user.id,
+              units_system: unitsSystem,
+              weekly_workout_goal: normalizedWeeklyGoal,
+            },
+            { onConflict: 'user_id' }
+          );
+        if (retrySettingsError) throw new Error(retrySettingsError.message);
+      } else {
+        throw new Error(settingsResult.error.message);
+      }
+    }
+
+    applyThemePreference(normalizedTheme);
 
     return refreshSavedUserData();
   };

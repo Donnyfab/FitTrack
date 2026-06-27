@@ -92,7 +92,11 @@ function mapGoalForInsert(goal, userId) {
   };
 }
 
+  
+
 export async function seedSampleDataIfNeeded(userId) {
+    // Disabled sample data seeding
+  return;
   const { count, error: countError } = await supabase
     .from('workouts')
     .select('*', { count: 'exact', head: true })

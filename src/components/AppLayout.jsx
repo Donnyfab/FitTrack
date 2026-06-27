@@ -1,6 +1,8 @@
 import { Outlet, NavLink } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import {
+  Activity,
+  CalendarDays,
   Dumbbell,
   LayoutDashboard,
   Target,
@@ -12,8 +14,10 @@ import {
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/workouts", label: "Workouts", icon: Dumbbell, end: false },
+  { to: "/exercise", label: "Exercise", icon: Activity, end: false },
   { to: "/goals", label: "Goals", icon: Target, end: false },
   { to: "/progress", label: "Progress", icon: TrendingUp, end: false },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays, end: false },
   { to: "/settings", label: "Settings", icon: SettingsIcon, end: false },
 ];
 
@@ -55,15 +59,25 @@ export default function AppLayout() {
           ))}
         </nav>
         <div className="p-3 border-t border-neutral-200">
-          <div className="flex items-center gap-3 px-3 py-2 mb-1">
-            <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-xs font-semibold text-neutral-600">
-              {initial}
+          <div className="rounded-xl border border-neutral-200 bg-white p-3 mb-2">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-neutral-200 flex items-center justify-center text-xs font-semibold text-neutral-600">
+                {initial}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-neutral-900 truncate">{firstName}</p>
+                <p className="text-xs text-neutral-500 truncate">{user?.email}</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-neutral-900 truncate">
-                {firstName}
-              </p>
-              <p className="text-xs text-neutral-500 truncate">{user?.email}</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+              <div className="rounded-lg bg-neutral-50 px-2 py-1.5">
+                <p className="text-sm font-semibold text-neutral-900">4/5</p>
+                <p className="text-[10px] text-neutral-500">Weekly goal</p>
+              </div>
+              <div className="rounded-lg bg-neutral-50 px-2 py-1.5">
+                <p className="text-sm font-semibold text-neutral-900">7d</p>
+                <p className="text-[10px] text-neutral-500">Streak</p>
+              </div>
             </div>
           </div>
           <button
@@ -86,25 +100,28 @@ export default function AppLayout() {
               FitTrack
             </span>
           </div>
+          <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500">
+              {initial}
+            </div>
         </div>
       </header>
 
       <main className="lg:ml-64 min-h-screen">
-        <div className="max-w-5xl mx-auto px-5 py-8 pb-28 lg:pb-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pb-28 lg:pb-12">
           <Outlet />
         </div>
       </main>
 
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-neutral-200 z-40">
-        <div className="flex items-center justify-around h-16 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-center justify-start gap-1 overflow-x-auto h-16 px-2 pb-[env(safe-area-inset-bottom)]">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 px-2 py-1.5 transition-colors ${
-                  isActive ? "text-neutral-900" : "text-neutral-400"
+                `min-w-[64px] flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-colors ${
+                  isActive ? "text-neutral-900 bg-neutral-100" : "text-neutral-400"
                 }`
               }
             >

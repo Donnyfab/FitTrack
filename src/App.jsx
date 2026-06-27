@@ -10,6 +10,8 @@ import Dashboard from './pages/Dashboard';
 import Workouts from './pages/Workouts';
 import WorkoutDetail from './pages/WorkoutDetail';
 import WorkoutForm from './pages/WorkoutForm';
+import Exercises from './pages/Exercises';
+import CalendarPage from './pages/Calendar';
 import Goals from './pages/Goals';
 import ProgressPage from './pages/Progress';
 import Settings from './pages/Settings';
@@ -63,8 +65,10 @@ const AuthenticatedApp = () => {
           <Route path="/workouts/new" element={<WorkoutForm />} />
           <Route path="/workouts/:id" element={<WorkoutDetail />} />
           <Route path="/workouts/:id/edit" element={<WorkoutForm />} />
+          <Route path="/exercise" element={<Exercises />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/progress" element={<ProgressPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
@@ -8,17 +8,31 @@ import {
   formatDate,
   formatDateLong,
 } from "@/lib/workoutUtils";
-import { getGoalTypeLabel } from "@/lib/constants";
-import StatCard from "@/components/StatCard";
-import EmptyState from "@/components/EmptyState";
 import {
+  bodyStats,
+  countSets,
+  mergeWithDemoGoals,
+  mergeWithDemoWorkouts,
+} from "@/lib/fittrackDemoData";
+import StatCard from "@/components/StatCard";
+import {
+  Activity,
+  ArrowRight,
+  CalendarDays,
   Dumbbell,
   Flame,
-  Target,
-  Calendar,
-  Plus,
-  ArrowRight,
+  HeartPulse,
+  Play,
+  TrendingUp,
 } from "lucide-react";
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -27,8 +41,15 @@ function getGreeting() {
   return "Good evening";
 }
 
+function startOfWeek(date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  next.setDate(next.getDate() - next.getDay());
+  return next;
+}
+
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +73,9 @@ export default function Dashboard() {
     }
   };
 
+  const displayWorkouts = useMemo(() => mergeWithDemoWorkouts(workouts), [workouts]);
+  const displayGoals = useMemo(() => mergeWithDemoGoals(goals), [goals]);
+
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -66,92 +90,171 @@ export default function Dashboard() {
     );
   }
 
-  const today = new Date().toISOString().split("T")[0];
-  const todayWorkout = workouts.find((w) => w.date === today);
-  const streak = calculateStreak(workouts);
-  const totalWorkouts = workouts.length;
-  const activeGoals = goals.length;
-  const recentWorkouts = workouts.slice(0, 4);
+  const today = new Date();
+  const todayKey = today.toISOString().split("T")[0];
+  const weekStart = startOfWeek(today);
+  const weeklyWorkouts = displayWorkouts.filter((workout) => {
+    const date = new Date(`${workout.date}T00:00:00`);
+    return date >= weekStart && date <= today;
+  });
+  const weeklyVolume = weeklyWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
+  const caloriesBurned = weeklyWorkouts.reduce((sum, workout) => sum + (Number(workout.calories) || 0), 0);
+  const streak = calculateStreak(displayWorkouts);
+  const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
+  const goalProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
+  const todayWorkout =
+    displayWorkouts.find((workout) => workout.date === todayKey) || displayWorkouts[0];
+  const recentWorkouts = displayWorkouts.slice(0, 4);
   const firstName =
     user?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "there";
+  const bodyLatest = bodyStats[bodyStats.length - 1];
 
   return (
-    <div className="animate-fade-in">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">
-          {getGreeting()}, {firstName}
-        </h1>
-        <p className="text-sm text-neutral-500 mt-1">{formatDateLong(today)}</p>
+    <div className="animate-fade-in space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">
+            {getGreeting()}, {firstName}
+          </h1>
+          <p className="text-sm text-neutral-500 mt-1">
+            {formatDateLong(todayKey)} · Welcome back to FitTrack
+          </p>
+        </div>
+        <select className="h-10 w-full sm:w-40 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 focus:outline-none focus:border-neutral-400">
+          <option>This Week</option>
+          <option>Last Week</option>
+          <option>This Month</option>
+        </select>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-10">
-        <StatCard icon={Calendar} label="Today" value={todayWorkout ? todayWorkout.name : "Rest day"} sublabel={todayWorkout ? todayWorkout.muscleGroup : "No workout logged"} />
-        <StatCard icon={Flame} label="Streak" value={`${streak} day${streak !== 1 ? "s" : ""}`} sublabel={streak > 0 ? "Keep it up!" : "Start today"} />
-        <StatCard icon={Dumbbell} label="Workouts" value={totalWorkouts} sublabel="All time" />
-        <StatCard icon={Target} label="Active Goals" value={activeGoals} sublabel={activeGoals > 0 ? "In progress" : "Set a goal"} />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
+        <StatCard icon={Dumbbell} label="Workouts this week" value={`${weeklyWorkouts.length} / ${weeklyGoal}`} sublabel="Logged sessions" />
+        <StatCard icon={TrendingUp} label="Total volume" value={`${Math.round(weeklyVolume).toLocaleString()}`} sublabel="lbs this week" />
+        <StatCard icon={Flame} label="Current streak" value={`${streak} day${streak !== 1 ? "s" : ""}`} sublabel={streak > 0 ? "Keep it steady" : "Start today"} />
+        <StatCard icon={Activity} label="Calories burned" value={caloriesBurned.toLocaleString()} sublabel="Estimated" />
       </div>
 
-      <div className="mb-10">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-neutral-900">Recent Workouts</h2>
-          {recentWorkouts.length > 0 && (
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Today&apos;s Workout</p>
+              <h2 className="text-xl font-semibold text-neutral-900 tracking-tight mt-2">
+                {todayWorkout?.name || "Rest day"}
+              </h2>
+              <p className="text-sm text-neutral-500 mt-1">
+                {todayWorkout?.muscleGroup || "No workout scheduled"} · {countSets(todayWorkout || {})} planned sets
+              </p>
+            </div>
+            <Link
+              to={todayWorkout?.id?.startsWith("demo") ? "/workouts/new" : `/workouts/${todayWorkout.id}`}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+            >
+              <Play className="w-4 h-4" />
+              Start Workout
+            </Link>
+          </div>
+          <div className="mt-5 rounded-xl bg-neutral-50 p-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium text-neutral-900">Next suggestion</span>
+              <span className="text-neutral-500">Rest 90 sec after heavy press sets</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Weekly Goal</p>
+              <h2 className="text-lg font-semibold text-neutral-900 mt-2">{weeklyWorkouts.length} / {weeklyGoal} workouts</h2>
+            </div>
+            <CalendarDays className="w-5 h-5 text-neutral-300" />
+          </div>
+          <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
+            <div className="h-full rounded-full bg-neutral-900" style={{ width: `${goalProgress}%` }} />
+          </div>
+          <p className="mt-3 text-sm text-neutral-500">
+            {weeklyWorkouts.length >= weeklyGoal
+              ? "Goal complete. Keep recovery on the plan."
+              : `${Math.max(weeklyGoal - weeklyWorkouts.length, 0)} workout${weeklyGoal - weeklyWorkouts.length !== 1 ? "s" : ""} left to close the week.`}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-neutral-900">Recent Workouts</h2>
             <Link to="/workouts" className="text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors flex items-center gap-1">
               View all <ArrowRight className="w-3 h-3" />
             </Link>
-          )}
-        </div>
-        {recentWorkouts.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-neutral-200">
-            <EmptyState icon={Dumbbell} title="No workouts yet" description="Start tracking your fitness journey by logging your first workout." action={<Link to="/workouts/new" className="inline-flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors"><Plus className="w-4 h-4" /> New Workout</Link>} />
           </div>
-        ) : (
-          <div className="space-y-2">
-            {recentWorkouts.map((workout) => {
-              const volume = calculateWorkoutVolume(workout);
-              return (
-                <Link key={workout.id} to={`/workouts/${workout.id}`} className="flex items-center justify-between bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 hover:shadow-sm transition-all">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-neutral-900 truncate">{workout.name}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-neutral-500">{formatDate(workout.date)}</span>
-                      {workout.muscleGroup && (<><span className="text-neutral-300">·</span><span className="text-xs text-neutral-500">{workout.muscleGroup}</span></>)}
-                    </div>
-                  </div>
-                  {volume > 0 && (
-                    <div className="text-right ml-4">
-                      <p className="text-sm font-medium text-neutral-900">{volume.toLocaleString()}</p>
-                      <p className="text-xs text-neutral-500">lbs volume</p>
-                    </div>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {activeGoals > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-neutral-900">Active Goals</h2>
-            <Link to="/goals" className="text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors flex items-center gap-1">
-              View all <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {goals.slice(0, 3).map((goal) => (
-              <Link key={goal.id} to="/goals" className="block bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 transition-colors">
-                <div className="flex items-center justify-between mb-2.5">
-                  <p className="font-medium text-neutral-900">{goal.title}</p>
-                  <span className="text-xs text-neutral-400">{getGoalTypeLabel(goal.type)}</span>
+          <div className="divide-y divide-neutral-100">
+            {recentWorkouts.map((workout) => (
+              <Link
+                key={workout.id}
+                to={workout.id?.startsWith("demo") ? "/workouts/new" : `/workouts/${workout.id}`}
+                className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-neutral-900 truncate">{workout.name}</p>
+                  <p className="text-xs text-neutral-500 mt-1">{formatDate(workout.date)} · {workout.muscleGroup}</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-neutral-900 rounded-full transition-all" style={{ width: `${goal.progress || 0}%` }} />
-                  </div>
-                  <span className="text-xs font-medium text-neutral-600">{goal.progress || 0}%</span>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-semibold text-neutral-900">{calculateWorkoutVolume(workout).toLocaleString()}</p>
+                  <p className="text-xs text-neutral-500">lbs volume</p>
                 </div>
               </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
+            <HeartPulse className="w-4 h-4 text-neutral-300" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-xl bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Weight</p>
+              <p className="text-xl font-semibold text-neutral-900 mt-1">{bodyLatest.weight} lb</p>
+            </div>
+            <div className="rounded-xl bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Body fat</p>
+              <p className="text-xl font-semibold text-neutral-900 mt-1">{bodyLatest.bodyFat}%</p>
+            </div>
+          </div>
+          <div className="h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={bodyStats}>
+                <XAxis dataKey="label" hide />
+                <YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
+                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 12 }} />
+                <Line type="monotone" dataKey="weight" stroke="#171717" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="bodyFat" stroke="#a3a3a3" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {displayGoals.length > 0 && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-neutral-900">Active Goal Focus</h2>
+            <Link to="/goals" className="text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors">
+              Manage goals
+            </Link>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {displayGoals.slice(0, 3).map((goal) => (
+              <div key={goal.id} className="rounded-xl border border-neutral-200 p-4">
+                <p className="font-medium text-neutral-900 truncate">{goal.title}</p>
+                <div className="mt-3 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-neutral-900" style={{ width: `${goal.progress || 0}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-neutral-500">{goal.progress || 0}% complete</p>
+              </div>
             ))}
           </div>
         </div>

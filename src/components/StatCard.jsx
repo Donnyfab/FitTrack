@@ -1,17 +1,21 @@
 export default function StatCard({ icon: Icon, label, value, sublabel }) {
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-4 lg:p-5 transition-shadow hover:shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+    <div className="bg-white rounded-2xl border border-white/60 p-5 lg:p-6 transition-all hover:-translate-y-0.5 hover:shadow-sm">
+      <div className="flex items-center justify-between mb-5">
+        <span className="text-[12px] font-medium text-neutral-500">
           {label}
         </span>
-        {Icon && <Icon className="w-4 h-4 text-neutral-300" strokeWidth={2} />}
+        {Icon && (
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100">
+            <Icon className="w-4 h-4 text-neutral-500" strokeWidth={1.8} />
+          </span>
+        )}
       </div>
-      <div className="text-xl lg:text-2xl font-semibold text-neutral-900 tracking-tight truncate">
+      <div className="text-2xl lg:text-3xl font-semibold text-neutral-900 tracking-tight tabular-nums truncate">
         {value}
       </div>
       {sublabel && (
-        <div className="text-xs text-neutral-500 mt-1 truncate">{sublabel}</div>
+        <div className="text-sm text-neutral-500 mt-2 truncate">{sublabel}</div>
       )}
     </div>
   );

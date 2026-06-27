@@ -63,8 +63,6 @@ export default function Exercises() {
       icon: form.muscleGroup.toLowerCase(),
       favorite: false,
       custom: true,
-      pr: "No PR yet",
-      last: "Not completed yet",
       tip: form.tip || "Add notes after your first completed workout.",
     };
     setExercises((items) => [nextExercise, ...items]);
@@ -139,8 +137,8 @@ export default function Exercises() {
         ))}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid items-start gap-4 xl:grid-cols-[1fr_420px]">
+        <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {filtered.map((exercise) => {
             const Icon = iconForGroup(exercise.muscleGroup);
             const selected = selectedExercise?.name === exercise.name;
@@ -198,23 +196,18 @@ export default function Exercises() {
           <div className="grid grid-cols-2 gap-3 mt-5">
             <div className="rounded-xl bg-neutral-50 p-3">
               <p className="text-xs text-neutral-500">Personal record</p>
-              <p className="text-sm font-semibold text-neutral-900 mt-1">{selectedExercise?.pr}</p>
+              <p className="text-sm font-semibold text-neutral-900 mt-1">No PR recorded</p>
             </div>
             <div className="rounded-xl bg-neutral-50 p-3">
               <p className="text-xs text-neutral-500">Last completed</p>
-              <p className="text-sm font-semibold text-neutral-900 mt-1">{selectedExercise?.last}</p>
+              <p className="text-sm font-semibold text-neutral-900 mt-1">No history yet</p>
             </div>
           </div>
 
           <div className="mt-5">
             <p className="text-sm font-medium text-neutral-900">Past performance history</p>
-            <div className="mt-3 space-y-2">
-              {["4 weeks ago", "2 weeks ago", "Last session"].map((label, index) => (
-                <div key={label} className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2">
-                  <span className="text-sm text-neutral-600">{label}</span>
-                  <span className="text-sm font-medium text-neutral-900">{index === 2 ? selectedExercise?.last : `${175 + index * 15} lb x ${8 - index}`}</span>
-                </div>
-              ))}
+            <div className="mt-3 rounded-xl border border-neutral-100 p-4">
+              <p className="text-sm text-neutral-500">History appears after this exercise is logged in a workout.</p>
             </div>
           </div>
 

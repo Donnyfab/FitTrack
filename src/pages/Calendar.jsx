@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { calculateWorkoutVolume, formatDate } from "@/lib/workoutUtils";
 import {
-  calendarEvents,
   countSets,
   getDateKey,
-  mergeWithDemoWorkouts,
 } from "@/lib/fittrackDemoData";
 import {
   ArrowLeft,
@@ -36,13 +35,8 @@ function buildCalendarDays(activeMonth) {
   });
 }
 
-function eventTone(type) {
-  if (type === "missed") return "bg-neutral-400";
-  if (type === "scheduled") return "bg-neutral-300";
-  return "bg-neutral-900";
-}
-
 export default function CalendarPage() {
+  const { settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeMonth, setActiveMonth] = useState(() => new Date());
@@ -61,7 +55,7 @@ export default function CalendarPage() {
   };
 
   const events = useMemo(() => {
-    const workoutEvents = mergeWithDemoWorkouts(workouts).map((workout) => ({
+    return workouts.map((workout) => ({
       date: workout.date,
       name: workout.name,
       muscleGroup: workout.muscleGroup || "Workout",
@@ -70,9 +64,6 @@ export default function CalendarPage() {
       volume: calculateWorkoutVolume(workout),
       workout,
     }));
-    const existingDates = new Set(workoutEvents.map((event) => `${event.date}-${event.name}`));
-    const supplemental = calendarEvents.filter((event) => !existingDates.has(`${event.date}-${event.name}`));
-    return [...workoutEvents, ...supplemental];
   }, [workouts]);
 
   const eventsByDate = useMemo(
@@ -100,7 +91,7 @@ export default function CalendarPage() {
     return event.type === "completed" && date >= weekStart && date <= weekEnd;
   });
   const weeklyVolume = weeklyCompleted.reduce((sum, event) => sum + (Number(event.volume) || 0), 0);
-  const weeklyGoal = 5;
+  const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
 
   if (loading) {
     return (
@@ -116,7 +107,7 @@ export default function CalendarPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">Calendar</h1>
-          <p className="text-sm text-neutral-500 mt-1">Review logged workouts, rest days, missed plans, and upcoming sessions.</p>
+          <p className="text-sm text-neutral-500 mt-1">Review logged workouts and rest days.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -152,8 +143,6 @@ export default function CalendarPage() {
             <h2 className="text-lg font-semibold text-neutral-900">{monthLabel(activeMonth)}</h2>
             <div className="flex items-center gap-3 text-xs text-neutral-500">
               <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neutral-900" /> Completed</span>
-              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neutral-300" /> Scheduled</span>
-              <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-neutral-400" /> Missed</span>
             </div>
           </div>
 
@@ -190,7 +179,7 @@ export default function CalendarPage() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1">
                     {dayEvents.slice(0, 3).map((event, index) => (
-                      <span key={`${event.name}-${index}`} className={`h-1.5 w-1.5 rounded-full ${eventTone(event.type)}`} />
+                      <span key={`${event.name}-${index}`} className="h-1.5 w-1.5 rounded-full bg-neutral-900" />
                     ))}
                   </div>
                   {isPastRest && <p className="mt-3 text-[10px] text-neutral-400">Rest</p>}
@@ -216,7 +205,7 @@ export default function CalendarPage() {
                 {selectedEvents.map((event, index) => (
                   <Link
                     key={`${event.name}-${index}`}
-                    to={event.workout?.id && !event.workout.id.startsWith("demo") ? `/workouts/${event.workout.id}` : "/workouts/new"}
+                    to={event.workout?.id ? `/workouts/${event.workout.id}` : "/workouts/new"}
                     className="block rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import {
@@ -8,7 +8,7 @@ import {
   getPersonalRecords,
   getWeeklyVolume,
 } from "@/lib/workoutUtils";
-import { countSets, mergeWithDemoWorkouts } from "@/lib/fittrackDemoData";
+import { countSets } from "@/lib/fittrackDemoData";
 import {
   Activity,
   Dumbbell,
@@ -59,8 +59,6 @@ export default function Progress() {
     }
   };
 
-  const displayWorkouts = useMemo(() => mergeWithDemoWorkouts(workouts), [workouts]);
-
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -72,15 +70,15 @@ export default function Progress() {
     );
   }
 
-  const totalVolume = displayWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
-  const totalSets = displayWorkouts.reduce((sum, workout) => sum + countSets(workout), 0);
-  const streak = calculateStreak(displayWorkouts);
-  const prList = Object.entries(getPersonalRecords(displayWorkouts))
+  const totalVolume = workouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
+  const totalSets = workouts.reduce((sum, workout) => sum + countSets(workout), 0);
+  const streak = calculateStreak(workouts);
+  const prList = Object.entries(getPersonalRecords(workouts))
     .sort(([, a], [, b]) => b.weight - a.weight)
     .slice(0, 8);
-  const weeklyVolume = getWeeklyVolume(displayWorkouts).slice(-12);
+  const weeklyVolume = getWeeklyVolume(workouts).slice(-12);
   const muscleBreakdown = Object.entries(
-    displayWorkouts.reduce((map, workout) => {
+    workouts.reduce((map, workout) => {
       const group = workout.muscleGroup?.split(",")[0] || "Other";
       map[group] = (map[group] || 0) + calculateWorkoutVolume(workout);
       return map;
@@ -90,13 +88,9 @@ export default function Progress() {
     name,
     weight: record.weight,
   }));
-  const bodyStatsData = [
-    { week: "May 27", weight: 180.6, bodyFat: 16.2 },
-    { week: "Jun 3", weight: 181.1, bodyFat: 15.9 },
-    { week: "Jun 10", weight: 181.5, bodyFat: 15.7 },
-    { week: "Jun 17", weight: 181.8, bodyFat: 15.4 },
-    { week: "Jun 24", weight: 182.0, bodyFat: 15.2 },
-  ];
+  const hasVolumeData = weeklyVolume.some((item) => Number(item.volume) > 0);
+  const hasMuscleData = muscleBreakdown.length > 0;
+  const hasStrengthData = strengthData.length > 0;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -115,7 +109,7 @@ export default function Progress() {
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
         {[
           { label: "Total Volume", icon: TrendingUp, value: Math.round(totalVolume).toLocaleString(), sub: "lbs lifted" },
-          { label: "Total Workouts", icon: Activity, value: displayWorkouts.length, sub: "sessions" },
+          { label: "Total Workouts", icon: Activity, value: workouts.length, sub: "sessions" },
           { label: "Total Sets", icon: Dumbbell, value: totalSets.toLocaleString(), sub: "completed" },
           { label: "Streak", icon: Flame, value: `${streak}d`, sub: "current run" },
         ].map(({ label, icon: Icon, value, sub }) => (
@@ -150,36 +144,56 @@ export default function Progress() {
         <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="text-base font-semibold text-neutral-900 mb-4">Volume Over Time</h2>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={weeklyVolume}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                <XAxis dataKey="week" tickFormatter={formatWeek} stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => (value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value)} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${Math.round(Number(value)).toLocaleString()} lbs`, "Volume"]} labelFormatter={formatWeek} />
-                <Line type="monotone" dataKey="volume" stroke="#0A0A0A" strokeWidth={2} dot={{ fill: "#0A0A0A", r: 3 }} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            {hasVolumeData ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={weeklyVolume}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                  <XAxis dataKey="week" tickFormatter={formatWeek} stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => (value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value)} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${Math.round(Number(value)).toLocaleString()} lbs`, "Volume"]} labelFormatter={formatWeek} />
+                  <Line type="monotone" dataKey="volume" stroke="#0A0A0A" strokeWidth={2} dot={{ fill: "#0A0A0A", r: 3 }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[280px] items-center justify-center rounded-xl bg-neutral-50 text-center">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">No volume history yet</p>
+                  <p className="mt-1 text-xs text-neutral-500">Volume trends will appear after workouts are logged.</p>
+                </div>
+              </div>
+            )}
           </div>
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="text-base font-semibold text-neutral-900 mb-4">Muscle Group Breakdown</h2>
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={muscleBreakdown} dataKey="volume" nameKey="group" innerRadius={58} outerRadius={90} paddingAngle={3}>
-                  {muscleBreakdown.map((entry, index) => (
-                    <Cell key={entry.group} fill={["#171717", "#525252", "#737373", "#a3a3a3", "#d4d4d4"][index % 5]} />
+            {hasMuscleData ? (
+              <>
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={muscleBreakdown} dataKey="volume" nameKey="group" innerRadius={58} outerRadius={90} paddingAngle={3}>
+                      {muscleBreakdown.map((entry, index) => (
+                        <Cell key={entry.group} fill={["#171717", "#525252", "#737373", "#a3a3a3", "#d4d4d4"][index % 5]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${Math.round(Number(value)).toLocaleString()} lbs`, "Volume"]} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {muscleBreakdown.map((item) => (
+                    <div key={item.group} className="flex items-center justify-between text-sm">
+                      <span className="text-neutral-600">{item.group}</span>
+                      <span className="font-medium text-neutral-900">{Math.round(item.volume).toLocaleString()} lb</span>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${Math.round(Number(value)).toLocaleString()} lbs`, "Volume"]} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="space-y-2">
-              {muscleBreakdown.map((item) => (
-                <div key={item.group} className="flex items-center justify-between text-sm">
-                  <span className="text-neutral-600">{item.group}</span>
-                  <span className="font-medium text-neutral-900">{Math.round(item.volume).toLocaleString()} lb</span>
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="flex h-[240px] items-center justify-center rounded-xl bg-neutral-50 text-center">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">No muscle group data</p>
+                  <p className="mt-1 text-xs text-neutral-500">Breakdowns will appear after workouts are logged.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -188,15 +202,24 @@ export default function Progress() {
         <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="text-base font-semibold text-neutral-900 mb-4">Strength Leaders</h2>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={strengthData} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
-                <XAxis type="number" stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="name" width={110} stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${value} lbs`, "PR"]} />
-                <Bar dataKey="weight" fill="#171717" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {hasStrengthData ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={strengthData} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
+                  <XAxis type="number" stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" width={110} stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${value} lbs`, "PR"]} />
+                  <Bar dataKey="weight" fill="#171717" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[260px] items-center justify-center rounded-xl bg-neutral-50 text-center">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">No strength records yet</p>
+                  <p className="mt-1 text-xs text-neutral-500">Strength leaders will appear after weighted sets are logged.</p>
+                </div>
+              </div>
+            )}
           </div>
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <div className="flex items-center justify-between mb-4">
@@ -207,19 +230,22 @@ export default function Progress() {
               <Link to="/exercise" className="text-xs font-medium text-neutral-500 hover:text-neutral-900">View all PRs</Link>
             </div>
             <div className="space-y-0">
-              {(prList.length ? prList : [
-                ["Bench Press", { weight: 225, reps: 3 }],
-                ["Squat", { weight: 315, reps: 2 }],
-                ["Deadlift", { weight: 365, reps: 1 }],
-              ]).slice(0, 5).map(([name, record]) => (
-                <div key={name} className="flex items-center justify-between py-2.5 border-b border-neutral-50 last:border-0">
-                  <span className="text-sm font-medium text-neutral-900">{name}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-neutral-500">{record.reps} reps</span>
-                    <span className="text-sm font-semibold text-neutral-900">{record.weight} lbs</span>
+              {prList.length > 0 ? (
+                prList.slice(0, 5).map(([name, record]) => (
+                  <div key={name} className="flex items-center justify-between py-2.5 border-b border-neutral-50 last:border-0">
+                    <span className="text-sm font-medium text-neutral-900">{name}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-neutral-500">{record.reps} reps</span>
+                      <span className="text-sm font-semibold text-neutral-900">{record.weight} lbs</span>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="rounded-xl bg-neutral-50 p-4 text-center">
+                  <p className="text-sm font-medium text-neutral-900">No PRs recorded</p>
+                  <p className="mt-1 text-xs text-neutral-500">Personal records will appear after logged sets.</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>
@@ -231,16 +257,12 @@ export default function Progress() {
             <Target className="w-4 h-4 text-neutral-400" />
             <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
           </div>
-          <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={bodyStatsData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-              <XAxis dataKey="week" stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Line type="monotone" dataKey="weight" stroke="#171717" strokeWidth={2} dot={{ fill: "#171717", r: 3 }} />
-              <Line type="monotone" dataKey="bodyFat" stroke="#a3a3a3" strokeWidth={2} dot={{ fill: "#a3a3a3", r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="flex h-[320px] items-center justify-center rounded-xl bg-neutral-50 text-center">
+            <div>
+              <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
+              <p className="mt-1 text-xs text-neutral-500">Weight and body fat charts will appear after body stats are added.</p>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { calculateWorkoutVolume, formatDate } from "@/lib/workoutUtils";
-import { countSets, mergeWithDemoWorkouts } from "@/lib/fittrackDemoData";
+import { countSets } from "@/lib/fittrackDemoData";
 import EmptyState from "@/components/EmptyState";
 import {
   ChevronRight,
@@ -36,13 +36,12 @@ export default function Workouts() {
     }
   };
 
-  const displayWorkouts = useMemo(() => mergeWithDemoWorkouts(workouts), [workouts]);
   const muscleGroups = useMemo(
-    () => ["All", ...new Set(displayWorkouts.map((workout) => workout.muscleGroup?.split(",")[0]).filter(Boolean))],
-    [displayWorkouts]
+    () => ["All", ...new Set(workouts.map((workout) => workout.muscleGroup?.split(",")[0]).filter(Boolean))],
+    [workouts]
   );
 
-  const filtered = displayWorkouts.filter((workout) => {
+  const filtered = workouts.filter((workout) => {
     const matchesTab =
       activeTab === "All Workouts" ||
       (activeTab === "Favorites" && workout.favorite) ||
@@ -153,11 +152,10 @@ export default function Workouts() {
           {filtered.map((workout) => {
             const volume = calculateWorkoutVolume(workout);
             const exerciseCount = workout.exercises?.length || 0;
-            const href = workout.id?.startsWith("demo") ? "/workouts/new" : `/workouts/${workout.id}`;
             return (
               <Link
                 key={workout.id}
-                to={href}
+                to={`/workouts/${workout.id}`}
                 className="grid gap-3 bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 hover:shadow-sm transition-all md:grid-cols-[1fr_auto] md:items-center"
               >
                 <div className="min-w-0 flex items-start gap-3">

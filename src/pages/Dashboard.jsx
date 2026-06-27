@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
@@ -9,10 +9,7 @@ import {
   formatDateLong,
 } from "@/lib/workoutUtils";
 import {
-  bodyStats,
   countSets,
-  mergeWithDemoGoals,
-  mergeWithDemoWorkouts,
 } from "@/lib/fittrackDemoData";
 import StatCard from "@/components/StatCard";
 import {
@@ -23,16 +20,9 @@ import {
   Flame,
   HeartPulse,
   Play,
+  Plus,
   TrendingUp,
 } from "lucide-react";
-import {
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -73,9 +63,6 @@ export default function Dashboard() {
     }
   };
 
-  const displayWorkouts = useMemo(() => mergeWithDemoWorkouts(workouts), [workouts]);
-  const displayGoals = useMemo(() => mergeWithDemoGoals(goals), [goals]);
-
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -93,21 +80,19 @@ export default function Dashboard() {
   const today = new Date();
   const todayKey = today.toISOString().split("T")[0];
   const weekStart = startOfWeek(today);
-  const weeklyWorkouts = displayWorkouts.filter((workout) => {
+  const weeklyWorkouts = workouts.filter((workout) => {
     const date = new Date(`${workout.date}T00:00:00`);
     return date >= weekStart && date <= today;
   });
   const weeklyVolume = weeklyWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
   const caloriesBurned = weeklyWorkouts.reduce((sum, workout) => sum + (Number(workout.calories) || 0), 0);
-  const streak = calculateStreak(displayWorkouts);
+  const streak = calculateStreak(workouts);
   const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
   const goalProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
-  const todayWorkout =
-    displayWorkouts.find((workout) => workout.date === todayKey) || displayWorkouts[0];
-  const recentWorkouts = displayWorkouts.slice(0, 4);
+  const todayWorkout = workouts.find((workout) => workout.date === todayKey);
+  const recentWorkouts = workouts.slice(0, 4);
   const firstName =
     user?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "there";
-  const bodyLatest = bodyStats[bodyStats.length - 1];
 
   return (
     <div className="animate-fade-in space-y-8">
@@ -131,7 +116,7 @@ export default function Dashboard() {
         <StatCard icon={Dumbbell} label="Workouts this week" value={`${weeklyWorkouts.length} / ${weeklyGoal}`} sublabel="Logged sessions" />
         <StatCard icon={TrendingUp} label="Total volume" value={`${Math.round(weeklyVolume).toLocaleString()}`} sublabel="lbs this week" />
         <StatCard icon={Flame} label="Current streak" value={`${streak} day${streak !== 1 ? "s" : ""}`} sublabel={streak > 0 ? "Keep it steady" : "Start today"} />
-        <StatCard icon={Activity} label="Calories burned" value={caloriesBurned.toLocaleString()} sublabel="Estimated" />
+        <StatCard icon={Activity} label="Calories burned" value={caloriesBurned ? caloriesBurned.toLocaleString() : "—"} sublabel={caloriesBurned ? "Estimated" : "Not tracked yet"} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
@@ -140,24 +125,26 @@ export default function Dashboard() {
             <div>
               <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Today&apos;s Workout</p>
               <h2 className="text-xl font-semibold text-neutral-900 tracking-tight mt-2">
-                {todayWorkout?.name || "Rest day"}
+                {todayWorkout?.name || "No workout scheduled"}
               </h2>
               <p className="text-sm text-neutral-500 mt-1">
-                {todayWorkout?.muscleGroup || "No workout scheduled"} · {countSets(todayWorkout || {})} planned sets
+                {todayWorkout
+                  ? `${todayWorkout.muscleGroup || "Workout"} · ${countSets(todayWorkout)} logged sets`
+                  : "Schedule or start a workout when you are ready."}
               </p>
             </div>
             <Link
-              to={todayWorkout?.id?.startsWith("demo") ? "/workouts/new" : `/workouts/${todayWorkout.id}`}
+              to={todayWorkout ? `/workouts/${todayWorkout.id}` : "/workouts/new"}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
             >
-              <Play className="w-4 h-4" />
-              Start Workout
+              {todayWorkout ? <Play className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {todayWorkout ? "Start Workout" : "New Workout"}
             </Link>
           </div>
           <div className="mt-5 rounded-xl bg-neutral-50 p-4">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-neutral-900">Next suggestion</span>
-              <span className="text-neutral-500">Rest 90 sec after heavy press sets</span>
+              <span className="font-medium text-neutral-900">Next step</span>
+              <span className="text-neutral-500">{todayWorkout ? "Review your sets before starting." : "Create a workout from your plan."}</span>
             </div>
           </div>
         </div>
@@ -190,22 +177,30 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="divide-y divide-neutral-100">
-            {recentWorkouts.map((workout) => (
-              <Link
-                key={workout.id}
-                to={workout.id?.startsWith("demo") ? "/workouts/new" : `/workouts/${workout.id}`}
-                className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-neutral-900 truncate">{workout.name}</p>
-                  <p className="text-xs text-neutral-500 mt-1">{formatDate(workout.date)} · {workout.muscleGroup}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold text-neutral-900">{calculateWorkoutVolume(workout).toLocaleString()}</p>
-                  <p className="text-xs text-neutral-500">lbs volume</p>
-                </div>
-              </Link>
-            ))}
+            {recentWorkouts.length > 0 ? (
+              recentWorkouts.map((workout) => (
+                <Link
+                  key={workout.id}
+                  to={`/workouts/${workout.id}`}
+                  className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-neutral-900 truncate">{workout.name}</p>
+                    <p className="text-xs text-neutral-500 mt-1">{formatDate(workout.date)}{workout.muscleGroup ? ` · ${workout.muscleGroup}` : ""}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold text-neutral-900">{calculateWorkoutVolume(workout).toLocaleString()}</p>
+                    <p className="text-xs text-neutral-500">lbs volume</p>
+                  </div>
+                </Link>
+              ))
+            ) : (
+              <div className="py-8 text-center">
+                <Dumbbell className="w-7 h-7 text-neutral-300 mx-auto mb-2" />
+                <p className="text-sm font-medium text-neutral-900">No workouts logged yet</p>
+                <p className="text-xs text-neutral-500 mt-1">Your recent workouts will appear here after you log them.</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -214,31 +209,14 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
             <HeartPulse className="w-4 h-4 text-neutral-300" />
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="rounded-xl bg-neutral-50 p-3">
-              <p className="text-xs text-neutral-500">Weight</p>
-              <p className="text-xl font-semibold text-neutral-900 mt-1">{bodyLatest.weight} lb</p>
-            </div>
-            <div className="rounded-xl bg-neutral-50 p-3">
-              <p className="text-xs text-neutral-500">Body fat</p>
-              <p className="text-xl font-semibold text-neutral-900 mt-1">{bodyLatest.bodyFat}%</p>
-            </div>
-          </div>
-          <div className="h-32">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={bodyStats}>
-                <XAxis dataKey="label" hide />
-                <YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
-                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 12 }} />
-                <Line type="monotone" dataKey="weight" stroke="#171717" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="bodyFat" stroke="#a3a3a3" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="rounded-xl bg-neutral-50 p-5 text-center">
+            <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
+            <p className="text-xs text-neutral-500 mt-1">Weight and body fat trends will appear after you add body stats.</p>
           </div>
         </div>
       </div>
 
-      {displayGoals.length > 0 && (
+      {goals.length > 0 && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-neutral-900">Active Goal Focus</h2>
@@ -246,8 +224,8 @@ export default function Dashboard() {
               Manage goals
             </Link>
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            {displayGoals.slice(0, 3).map((goal) => (
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+            {goals.slice(0, 4).map((goal) => (
               <div key={goal.id} className="rounded-xl border border-neutral-200 p-4">
                 <p className="font-medium text-neutral-900 truncate">{goal.title}</p>
                 <div className="mt-3 h-1.5 rounded-full bg-neutral-100 overflow-hidden">

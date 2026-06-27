@@ -69,16 +69,6 @@ export default function AppLayout() {
                 <p className="text-xs text-neutral-500 truncate">{user?.email}</p>
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-center">
-              <div className="rounded-lg bg-neutral-50 px-2 py-1.5">
-                <p className="text-sm font-semibold text-neutral-900">4/5</p>
-                <p className="text-[10px] text-neutral-500">Weekly goal</p>
-              </div>
-              <div className="rounded-lg bg-neutral-50 px-2 py-1.5">
-                <p className="text-sm font-semibold text-neutral-900">7d</p>
-                <p className="text-[10px] text-neutral-500">Streak</p>
-              </div>
-            </div>
           </div>
           <button
             onClick={() => logout()}
@@ -107,7 +97,7 @@ export default function AppLayout() {
       </header>
 
       <main className="lg:ml-64 min-h-screen">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pb-28 lg:pb-12">
+        <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 2xl:px-10 py-6 sm:py-8 pb-28 lg:pb-12">
           <Outlet />
         </div>
       </main>

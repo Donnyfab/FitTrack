@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { GOAL_STATUSES, GOAL_TYPES, getGoalStatusLabel, getGoalTypeLabel } from "@/lib/constants";
-import { daysUntil, mergeWithDemoGoals } from "@/lib/fittrackDemoData";
+import { daysUntil } from "@/lib/fittrackDemoData";
 import { formatDate } from "@/lib/workoutUtils";
 import EmptyState from "@/components/EmptyState";
 import {
@@ -56,8 +56,7 @@ export default function Goals() {
     }
   };
 
-  const displayGoals = useMemo(() => mergeWithDemoGoals(goals), [goals]);
-  const filteredGoals = displayGoals.filter((goal) =>
+  const filteredGoals = goals.filter((goal) =>
     activeTab === "Active Goals" ? goal.status !== "completed" : goal.status === "completed"
   );
 
@@ -205,13 +204,11 @@ export default function Goals() {
           />
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           {filteredGoals.map((goal) => {
-            const current = goal.current ?? goal.progress ?? 0;
-            const target = goal.targetProgress ?? goal.target ?? "Target";
+            const target = goal.target || "Not set";
             const progress = Number(goal.progress) || 0;
             const days = daysUntil(goal.deadline);
-            const isDemo = `${goal.id}`.startsWith("goal-");
             const completed = goal.status === "completed";
             return (
               <div key={goal.id} className="bg-white rounded-2xl border border-neutral-200 p-5">
@@ -223,16 +220,14 @@ export default function Goals() {
                     </div>
                     <p className="text-sm text-neutral-600 mt-2">{goal.description || goal.notes || goal.target}</p>
                   </div>
-                  {!isDemo && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => openEdit(goal)} className="p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleDelete(goal.id)} className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => openEdit(goal)} className="p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleDelete(goal.id)} className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{typeLabel(goal.type)}</span>
@@ -242,7 +237,7 @@ export default function Goals() {
                 <div className="grid grid-cols-3 gap-3 mt-4">
                   <div className="rounded-xl bg-neutral-50 p-3">
                     <p className="text-xs text-neutral-500">Current</p>
-                    <p className="text-sm font-semibold text-neutral-900 mt-1">{current}</p>
+                    <p className="text-sm font-semibold text-neutral-900 mt-1">{progress}%</p>
                   </div>
                   <div className="rounded-xl bg-neutral-50 p-3">
                     <p className="text-xs text-neutral-500">Target</p>

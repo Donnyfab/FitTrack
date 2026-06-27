@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { calculateWorkoutVolume, formatDateLong } from "@/lib/workoutUtils";
-import { countSets, demoWorkouts } from "@/lib/fittrackDemoData";
+import { countSets } from "@/lib/fittrackDemoData";
 import {
   ArrowLeft,
   Check,
@@ -15,7 +15,6 @@ import {
   Star,
   TimerReset,
   Trash2,
-  Trophy,
 } from "lucide-react";
 
 const formatTimer = (seconds) => {
@@ -30,10 +29,10 @@ export default function WorkoutDetail() {
   const [workout, setWorkout] = useState(null);
   const [loggedExercises, setLoggedExercises] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [workoutSeconds, setWorkoutSeconds] = useState(46 * 60 + 12);
+  const [workoutSeconds, setWorkoutSeconds] = useState(0);
   const [restSeconds, setRestSeconds] = useState(90);
   const [restPaused, setRestPaused] = useState(false);
-  const [favoriteExercises, setFavoriteExercises] = useState(["Bench Press"]);
+  const [favoriteExercises, setFavoriteExercises] = useState([]);
 
   useEffect(() => {
     loadWorkout();
@@ -58,9 +57,8 @@ export default function WorkoutDetail() {
       setWorkout(data);
       setLoggedExercises(data.exercises || []);
     } catch {
-      const fallback = demoWorkouts.find((item) => item.id === id) || null;
-      setWorkout(fallback);
-      setLoggedExercises(fallback?.exercises || []);
+      setWorkout(null);
+      setLoggedExercises([]);
     } finally {
       setLoading(false);
     }
@@ -178,11 +176,9 @@ export default function WorkoutDetail() {
           <button className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
             <MoreHorizontal className="w-4 h-4" /> More
           </button>
-          {!id?.startsWith("demo") && (
-            <button onClick={handleDelete} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          )}
+          <button onClick={handleDelete} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
         </div>
       </div>
 
@@ -245,13 +241,8 @@ export default function WorkoutDetail() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-neutral-900 truncate">{exercise.name}</p>
-                  {exerciseIndex === 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-700">
-                      <Trophy className="w-3 h-3" /> New PR
-                    </span>
-                  )}
                 </div>
-                <p className="text-xs text-neutral-500 mt-1">Last time: {exerciseIndex === 0 ? "205 lb x 6" : "Matched target reps"}</p>
+                <p className="text-xs text-neutral-500 mt-1">Previous performance appears after this exercise has history.</p>
               </div>
               <button
                 onClick={() => toggleFavorite(exercise.name)}

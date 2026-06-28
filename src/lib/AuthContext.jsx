@@ -193,6 +193,11 @@ export const AuthProvider = ({ children }) => {
     notificationWorkoutReminders,
     notificationGoalProgress,
     notificationWeeklySummary,
+    preferredTrainingDays,
+    equipment,
+    experienceLevel,
+    primaryGoalType,
+    workoutSplitPreference,
   }) => {
     if (!user?.id) {
       throw new Error('Authentication required');
@@ -216,6 +221,11 @@ export const AuthProvider = ({ children }) => {
     if (notificationWorkoutReminders != null) settingsPayload.notification_workout_reminders = Boolean(notificationWorkoutReminders);
     if (notificationGoalProgress != null) settingsPayload.notification_goal_progress = Boolean(notificationGoalProgress);
     if (notificationWeeklySummary != null) settingsPayload.notification_weekly_summary = Boolean(notificationWeeklySummary);
+    if (preferredTrainingDays != null) settingsPayload.preferred_training_days = Array.isArray(preferredTrainingDays) ? preferredTrainingDays : [];
+    if (equipment != null) settingsPayload.equipment = Array.isArray(equipment) ? equipment : [];
+    if (experienceLevel != null) settingsPayload.experience_level = experienceLevel || 'beginner';
+    if (primaryGoalType != null) settingsPayload.primary_goal_type = primaryGoalType || 'get_stronger';
+    if (workoutSplitPreference != null) settingsPayload.workout_split_preference = workoutSplitPreference || 'push_pull_legs';
 
     const [{ error: profileError }, settingsResult] = await Promise.all([
       supabase
@@ -246,6 +256,11 @@ export const AuthProvider = ({ children }) => {
           'notification_workout_reminders',
           'notification_goal_progress',
           'notification_weekly_summary',
+          'preferred_training_days',
+          'equipment',
+          'experience_level',
+          'primary_goal_type',
+          'workout_split_preference',
         ].some((column) => message.includes(column))
       ) {
         const { error: retrySettingsError } = await supabase

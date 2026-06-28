@@ -1,14 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { calculateWorkoutVolume, formatDate } from "@/lib/workoutUtils";
+import { useAuth } from "@/lib/AuthContext";
+import { formatDate } from "@/lib/workoutUtils";
 import { countSets } from "@/lib/fittrackDemoData";
+import {
+  createWorkoutDraftFromTemplate,
+  formatDuration,
+  getCompletedSetCount,
+  getStarterRoutine,
+  getWorkoutDurationMinutes,
+  getWorkoutStatusLabel,
+  writeWorkoutDraft,
+} from "@/lib/trainingInsights";
 import EmptyState from "@/components/EmptyState";
 import {
   ChevronRight,
   Dumbbell,
   Filter,
+  Play,
   Plus,
+  RotateCcw,
   Search,
   Star,
 } from "lucide-react";
@@ -16,6 +28,8 @@ import {
 const tabs = ["All Workouts", "Favorites", "Templates"];
 
 export default function Workouts() {
+  const navigate = useNavigate();
+  const { settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All Workouts");
@@ -57,8 +71,37 @@ export default function Workouts() {
   const emptyTitle = workouts.length === 0 ? "No workouts logged yet" : "No workouts match this view";
   const emptyDescription =
     workouts.length === 0
-      ? "Create your first workout to start tracking sets, volume, and progress."
+      ? "Start with a simple routine. Create Push, Pull, Legs, or Full Body and adjust it before saving."
       : "Clear the search, switch tabs, or choose a different muscle group.";
+
+  const openDraft = (draft) => {
+    writeWorkoutDraft(draft);
+    navigate("/workouts/new");
+  };
+
+  const repeatWorkout = (workout) => {
+    openDraft(createWorkoutDraftFromTemplate(workout, {
+      date: new Date().toISOString().split("T")[0],
+      status: "planned",
+      notes: `Repeated from ${workout.name}.`,
+    }));
+  };
+
+  const createStarter = (day) => {
+    openDraft(getStarterRoutine(settings?.workout_split_preference, day));
+  };
+
+  const toggleFavorite = async (workout) => {
+    const nextFavorite = !workout.favorite;
+    setWorkouts((items) =>
+      items.map((item) => item.id === workout.id ? { ...item, favorite: nextFavorite } : item)
+    );
+    try {
+      await base44.entities.Workout.update(workout.id, { favorite: nextFavorite });
+    } catch {
+      loadWorkouts();
+    }
+  };
 
   if (loading) {
     return (
@@ -147,21 +190,29 @@ export default function Workouts() {
             title={emptyTitle}
             description={emptyDescription}
             action={
-              <Link to="/workouts/new" className="inline-flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors">
-                <Plus className="w-4 h-4" /> New Workout
-              </Link>
+              <div className="flex flex-wrap justify-center gap-2">
+                {["Push", "Pull", "Legs", "Full Body"].map((day) => (
+                  <button key={day} onClick={() => createStarter(day)} className="inline-flex items-center gap-2 px-3 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors">
+                    <Plus className="w-4 h-4" /> {day}
+                  </button>
+                ))}
+                <Link to="/workouts/new" className="inline-flex items-center gap-2 px-3 py-2 border border-neutral-200 text-neutral-700 text-sm font-medium rounded-lg hover:bg-neutral-50 transition-colors">
+                  Build My Plan
+                </Link>
+              </div>
             }
           />
         </div>
       ) : (
         <div className="space-y-2">
           {filtered.map((workout) => {
-            const volume = calculateWorkoutVolume(workout);
             const exerciseCount = workout.exercises?.length || 0;
+            const completedSets = getCompletedSetCount(workout);
+            const plannedSets = countSets(workout);
+            const duration = getWorkoutDurationMinutes(workout);
             return (
-              <Link
+              <article
                 key={workout.id}
-                to={`/workouts/${workout.id}`}
                 className="grid gap-3 bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 hover:shadow-sm transition-all md:grid-cols-[1fr_auto] md:items-center"
               >
                 <div className="min-w-0 flex items-start gap-3">
@@ -170,13 +221,27 @@ export default function Workouts() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-neutral-900 truncate">{workout.name}</p>
+                      <Link to={`/workouts/${workout.id}`} className="font-medium text-neutral-900 truncate hover:text-neutral-600">
+                        {workout.name}
+                      </Link>
                       {workout.favorite && <Star className="w-3.5 h-3.5 text-neutral-400 fill-neutral-400" />}
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-xs text-neutral-500">{formatDate(workout.date)}</span>
+                      <span className="text-xs text-neutral-500">Last performed {formatDate(workout.date)}</span>
                       {workout.muscleGroup && <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{workout.muscleGroup}</span>}
+                      <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{getWorkoutStatusLabel(workout)}</span>
                       {workout.template && <span className="text-xs text-neutral-400">Template</span>}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button onClick={() => repeatWorkout(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800">
+                        <RotateCcw className="h-3.5 w-3.5" /> Repeat
+                      </button>
+                      <Link to={`/workouts/${workout.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                        <Play className="h-3.5 w-3.5" /> Quick start
+                      </Link>
+                      <button onClick={() => toggleFavorite(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                        <Star className={`h-3.5 w-3.5 ${workout.favorite ? "fill-neutral-900 text-neutral-900" : ""}`} /> Favorite
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -186,18 +251,20 @@ export default function Workouts() {
                     <p className="text-xs text-neutral-500">Exercises</p>
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-neutral-900">{countSets(workout)}</p>
-                    <p className="text-xs text-neutral-500">Sets</p>
+                    <p className="text-sm font-semibold text-neutral-900">{completedSets} / {plannedSets}</p>
+                    <p className="text-xs text-neutral-500">Sets done</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-neutral-900">{volume.toLocaleString()}</p>
-                      <p className="text-xs text-neutral-500">lbs</p>
+                      <p className="text-sm font-semibold text-neutral-900">{formatDuration(duration)}</p>
+                      <p className="text-xs text-neutral-500">Duration</p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-300 hidden md:block" />
+                    <Link to={`/workouts/${workout.id}`} aria-label={`Open ${workout.name}`}>
+                      <ChevronRight className="w-4 h-4 text-neutral-300 hidden md:block" />
+                    </Link>
                   </div>
                 </div>
-              </Link>
+              </article>
             );
           })}
         </div>

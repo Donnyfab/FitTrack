@@ -1,4 +1,5 @@
-import { Outlet, NavLink } from "react-router-dom";
+import { useState } from "react";
+import { Outlet, NavLink, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { getUserFirstName } from "@/lib/userDisplay";
 import {
@@ -10,6 +11,7 @@ import {
   TrendingUp,
   Settings as SettingsIcon,
   LogOut,
+  CirclePlus,
 } from "lucide-react";
 
 const navItems = [
@@ -23,15 +25,23 @@ const navItems = [
 ];
 
 const mobileNavItems = [
-  { to: "/", label: "Today", icon: LayoutDashboard, end: true },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/workouts", label: "Workouts", icon: Dumbbell, end: false },
+  { to: "/workouts/new", label: "Start", icon: CirclePlus, end: true },
   { to: "/progress", label: "Progress", icon: TrendingUp, end: false },
   { to: "/calendar", label: "Calendar", icon: CalendarDays, end: false },
-  { to: "/settings", label: "More", icon: SettingsIcon, end: false },
+];
+
+const profileLinks = [
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/exercise", label: "Exercises Library", icon: Activity },
+  { to: "/goals", label: "Goals", icon: Target },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays },
 ];
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
   const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
 
@@ -104,9 +114,44 @@ export default function AppLayout() {
               FitTrack
             </span>
           </div>
-          <div className="w-9 h-9 rounded-2xl bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500">
+          <button
+            type="button"
+            onClick={() => setProfileOpen((value) => !value)}
+            className="w-9 h-9 rounded-2xl bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500"
+            aria-haspopup="menu"
+            aria-expanded={profileOpen}
+          >
             {initial}
-          </div>
+          </button>
+          {profileOpen && (
+            <div className="absolute right-5 top-14 z-50 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl" role="menu">
+              <div className="px-3 py-2">
+                <p className="truncate text-sm font-semibold text-neutral-900">{firstName}</p>
+                <p className="truncate text-xs text-neutral-500">{user?.email}</p>
+              </div>
+              <div className="my-1 h-px bg-neutral-100" />
+              {profileLinks.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                  role="menuitem"
+                >
+                  <item.icon className="h-4 w-4 text-neutral-400" />
+                  {item.label}
+                </Link>
+              ))}
+              <button
+                onClick={() => logout()}
+                className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                role="menuitem"
+              >
+                <LogOut className="h-4 w-4" />
+                Log out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

@@ -5,6 +5,14 @@ import { useAuth } from "@/lib/AuthContext";
 import { calculateWorkoutVolume, formatDateLong } from "@/lib/workoutUtils";
 import { countSets, exerciseCatalog } from "@/lib/fittrackDemoData";
 import {
+  detectWorkoutPRs,
+  formatDuration,
+  formatSetPerformance,
+  getLastExercisePerformance,
+  getTryTodaySuggestion,
+  getWorkoutDurationMinutes,
+} from "@/lib/trainingInsights";
+import {
   ArrowLeft,
   Check,
   Clock,
@@ -18,6 +26,7 @@ import {
   Search,
   Star,
   TimerReset,
+  Trophy,
   Trash2,
   X,
 } from "lucide-react";
@@ -34,6 +43,7 @@ export default function WorkoutDetail() {
   const { settings } = useAuth();
   const [workout, setWorkout] = useState(null);
   const [loggedExercises, setLoggedExercises] = useState([]);
+  const [allWorkouts, setAllWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workoutSeconds, setWorkoutSeconds] = useState(0);
   const defaultRestSeconds = Number(settings?.default_rest_timer_seconds) || 90;
@@ -45,6 +55,7 @@ export default function WorkoutDetail() {
   const [exerciseQuery, setExerciseQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [saveState, setSaveState] = useState("saved");
+  const [finishSummary, setFinishSummary] = useState(null);
 
   useEffect(() => {
     loadWorkout();
@@ -69,15 +80,17 @@ export default function WorkoutDetail() {
 
   const loadWorkout = async () => {
     try {
-      const [data, savedExercises] = await Promise.all([
+      const [data, savedExercises, workoutRows] = await Promise.all([
         base44.entities.Workout.get(id),
         base44.entities.UserExercise.list("name", 500),
+        base44.entities.Workout.list("-date", 500),
       ]);
       const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
       const mergedCatalog = exerciseCatalog.map((exercise) => ({ ...exercise, ...(savedByName.get(exercise.name) || {}) }));
       const customExercises = savedExercises.filter((exercise) => !exerciseCatalog.some((item) => item.name === exercise.name));
       setWorkout(data);
       setLoggedExercises(data.exercises || []);
+      setAllWorkouts(workoutRows);
       setAvailableExercises([...customExercises, ...mergedCatalog]);
       setFavoriteExercises(savedExercises.filter((exercise) => exercise.favorite).map((exercise) => exercise.name));
     } catch {
@@ -109,6 +122,8 @@ export default function WorkoutDetail() {
   };
 
   const toggleSet = (exerciseIndex, setIndex) => {
+    const currentSet = loggedExercises[exerciseIndex]?.sets?.[setIndex];
+    const willComplete = !currentSet?.completed;
     const nextExercises = loggedExercises.map((exercise, currentExerciseIndex) =>
         currentExerciseIndex === exerciseIndex
           ? {
@@ -120,6 +135,10 @@ export default function WorkoutDetail() {
           : exercise
     );
     setLoggedExercises(nextExercises);
+    if (willComplete) {
+      setRestSeconds(defaultRestSeconds);
+      setRestPaused(false);
+    }
     saveExercises(nextExercises);
   };
 
@@ -211,7 +230,24 @@ export default function WorkoutDetail() {
     }));
     setLoggedExercises(nextExercises);
     await saveExercises(nextExercises, { status: "completed", forceSave: true });
-    navigate("/workouts");
+    const nextWorkout = { ...displayWorkout, status: "completed", exercises: nextExercises };
+    const prs = detectWorkoutPRs(nextWorkout, allWorkouts.filter((item) => item.id !== id));
+    setFinishSummary({
+      workout: nextWorkout,
+      duration: Math.max(Math.ceil(workoutSeconds / 60), getWorkoutDurationMinutes(nextWorkout)),
+      sets: countSets(nextWorkout),
+      completedSets: countSets(nextWorkout),
+      exercises: nextExercises.length,
+      prs,
+      consistency: allWorkouts.filter((item) => {
+        const today = new Date();
+        const weekStart = new Date(today);
+        weekStart.setHours(0, 0, 0, 0);
+        weekStart.setDate(today.getDate() - today.getDay());
+        const date = new Date(`${item.date}T00:00:00`);
+        return (item.status || "completed") === "completed" && date >= weekStart && date <= today && item.id !== id;
+      }).length + 1,
+    });
   };
 
   const toggleFavorite = async (exerciseName) => {
@@ -247,6 +283,10 @@ export default function WorkoutDetail() {
   const displayWorkout = useMemo(
     () => (workout ? { ...workout, exercises: loggedExercises } : null),
     [workout, loggedExercises]
+  );
+  const previousWorkouts = useMemo(
+    () => allWorkouts.filter((item) => item.id !== id),
+    [allWorkouts, id]
   );
 
   if (loading) {
@@ -286,6 +326,8 @@ export default function WorkoutDetail() {
   const pickerResults = availableExercises.filter((exercise) =>
     `${exercise.name} ${exercise.muscleGroup}`.toLowerCase().includes(exerciseQuery.toLowerCase())
   );
+  const workoutPrs = detectWorkoutPRs(displayWorkout, previousWorkouts);
+  const prByExercise = new Map(workoutPrs.map((pr) => [pr.exercise, pr]));
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -392,12 +434,26 @@ export default function WorkoutDetail() {
       <div className="space-y-3">
         {loggedExercises.map((exercise, exerciseIndex) => (
           <div key={`${exercise.name}-${exerciseIndex}`} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+            {(() => {
+              const lastPerformance = getLastExercisePerformance(previousWorkouts, exercise.name, {
+                beforeDate: displayWorkout.date,
+                excludeWorkoutId: id,
+              });
+              const pr = prByExercise.get(exercise.name);
+              return (
             <div className="flex items-start justify-between gap-3 border-b border-neutral-100 px-4 py-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-neutral-900 truncate">{exercise.name}</p>
+                  {pr && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-900">
+                      <Trophy className="h-3 w-3" /> New PR
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-neutral-500 mt-1">Last time appears after this exercise has saved history.</p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Last time: {formatSetPerformance(lastPerformance?.bestSet)} · {getTryTodaySuggestion(lastPerformance)}
+                </p>
               </div>
               <button
                 onClick={() => toggleFavorite(exercise.name)}
@@ -407,6 +463,8 @@ export default function WorkoutDetail() {
                 <Star className={`w-4 h-4 ${favoriteExercises.includes(exercise.name) ? "fill-neutral-900 text-neutral-900" : ""}`} />
               </button>
             </div>
+              );
+            })()}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] text-sm">
                 <thead>
@@ -421,7 +479,12 @@ export default function WorkoutDetail() {
                 <tbody className="divide-y divide-neutral-50">
                   {(exercise.sets || []).map((set, setIndex) => (
                     <tr key={setIndex}>
-                      <td className="px-4 py-3 text-neutral-500">Set {setIndex + 1}</td>
+                      <td className="px-4 py-3 text-neutral-500">
+                        <span>Set {setIndex + 1}</span>
+                        {prByExercise.get(exercise.name)?.setIndex === setIndex && (
+                          <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-900">PR</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2">
                         <input
                           type="number"
@@ -531,6 +594,65 @@ export default function WorkoutDetail() {
         <div className="bg-white rounded-xl border border-neutral-200 p-4">
           <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Notes</p>
           <p className="text-sm text-neutral-700 whitespace-pre-wrap">{displayWorkout.notes}</p>
+        </div>
+      )}
+
+      {finishSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Workout Complete</p>
+                <h2 className="mt-2 text-2xl font-semibold text-neutral-900">{finishSummary.workout.name}</h2>
+                <p className="mt-1 text-sm text-neutral-500">You showed up and completed {finishSummary.completedSets} sets.</p>
+              </div>
+              <button onClick={() => setFinishSummary(null)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-900" aria-label="Close workout summary">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-500">Duration</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-900">{formatDuration(finishSummary.duration)}</p>
+              </div>
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-500">Sets</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-900">{finishSummary.completedSets}</p>
+              </div>
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-500">Exercises</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-900">{finishSummary.exercises}</p>
+              </div>
+              <div className="rounded-xl bg-neutral-50 p-3">
+                <p className="text-xs text-neutral-500">PRs</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-900">{finishSummary.prs.length}</p>
+              </div>
+            </div>
+            {finishSummary.prs.length > 0 && (
+              <div className="mt-5 rounded-xl border border-neutral-100 p-4">
+                <p className="text-sm font-semibold text-neutral-900">New PRs</p>
+                <div className="mt-2 space-y-2">
+                  {finishSummary.prs.map((pr) => (
+                    <p key={`${pr.exercise}-${pr.weight}-${pr.reps}`} className="text-sm text-neutral-600">
+                      {pr.exercise} — {formatSetPerformance(pr)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="mt-5 rounded-xl bg-neutral-50 p-4">
+              <p className="text-sm font-medium text-neutral-900">Weekly consistency</p>
+              <p className="mt-1 text-sm text-neutral-500">{finishSummary.consistency} workout{finishSummary.consistency !== 1 ? "s" : ""} completed this week.</p>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <button onClick={() => navigate("/workouts")} className="inline-flex h-10 flex-1 items-center justify-center rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
+                Done
+              </button>
+              <button onClick={() => navigate("/progress")} className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-neutral-200 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                View Progress
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

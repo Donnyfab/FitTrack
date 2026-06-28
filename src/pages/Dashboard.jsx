@@ -1,28 +1,43 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { getUserFirstName } from "@/lib/userDisplay";
 import {
   calculateStreak,
-  calculateWorkoutVolume,
   formatDate,
   formatDateLong,
 } from "@/lib/workoutUtils";
 import {
   countSets,
 } from "@/lib/fittrackDemoData";
+import {
+  createWorkoutDraftFromTemplate,
+  formatDuration,
+  formatSetPerformance,
+  getCompletedSetCount,
+  getHumanWorkoutMetric,
+  getLatestPR,
+  getNextScheduledWorkout,
+  getRemainingSetCount,
+  getWeeklySetSummary,
+  getWorkoutDurationMinutes,
+  writeWorkoutDraft,
+} from "@/lib/trainingInsights";
 import StatCard from "@/components/StatCard";
 import {
   Activity,
   ArrowRight,
   CalendarDays,
+  CheckCircle2,
   Dumbbell,
   Flame,
   HeartPulse,
   Play,
   Plus,
+  RotateCcw,
   TrendingUp,
+  Trophy,
 } from "lucide-react";
 
 function getGreeting() {
@@ -57,22 +72,23 @@ function getPeriodRange(period, today) {
   return { start, end };
 }
 
-const periodLabels = {
-  "this-week": "this week",
-  "last-week": "last week",
-  "this-month": "this month",
-};
-
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { user, settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [goals, setGoals] = useState([]);
   const [bodyStats, setBodyStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("this-week");
+  const [metricTick, setMetricTick] = useState(0);
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setMetricTick((value) => value + 1), 8000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const loadData = async () => {
@@ -114,20 +130,34 @@ export default function Dashboard() {
     const date = new Date(`${workout.date}T00:00:00`);
     return date >= periodStart && date <= periodEnd;
   });
+  const completedPeriodWorkouts = periodWorkouts.filter((workout) => (workout.status || "completed") === "completed");
   const weeklyWorkouts = workouts.filter((workout) => {
     const date = new Date(`${workout.date}T00:00:00`);
-    return date >= weekStart && date <= today;
+    return (workout.status || "completed") === "completed" && date >= weekStart && date <= today;
   });
-  const periodVolume = periodWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
   const caloriesBurned = periodWorkouts.reduce((sum, workout) => sum + (Number(workout.calories) || 0), 0);
   const streak = calculateStreak(workouts);
   const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
   const goalProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
-  const todayWorkout = workouts.find((workout) => workout.date === todayKey);
+  const todayWorkout = workouts.find((workout) => workout.date === todayKey && workout.status !== "missed");
+  const activeWorkout = workouts.find((workout) => ["planned", "scheduled"].includes(workout.status) && workout.date <= todayKey);
+  const lastCompletedWorkout = workouts.find((workout) => (workout.status || "completed") === "completed");
+  const nextScheduledWorkout = getNextScheduledWorkout(workouts);
+  const weeklySets = getWeeklySetSummary(workouts, weekStart, today);
+  const humanMetric = getHumanWorkoutMetric(workouts, periodWorkouts, weeklySets, nextScheduledWorkout, metricTick);
+  const latestPr = getLatestPR(workouts);
   const recentWorkouts = periodWorkouts.slice(0, 4);
   const latestBodyStat = bodyStats[0];
   const firstName = getUserFirstName(user, "there");
-  const periodLabel = periodLabels[period];
+  const repeatWorkout = (source) => {
+    const draft = createWorkoutDraftFromTemplate(source, {
+      date: todayKey,
+      status: "planned",
+      notes: source?.name ? `Repeated from ${source.name}.` : "",
+    });
+    writeWorkoutDraft(draft);
+    navigate("/workouts/new");
+  };
 
   return (
     <div className="animate-fade-in space-y-8">
@@ -153,10 +183,51 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
-        <StatCard icon={Dumbbell} label={period === "this-week" ? "Workouts this week" : "Workouts"} value={`${periodWorkouts.length}${period === "this-week" ? ` / ${weeklyGoal}` : ""}`} sublabel="Logged sessions" />
-        <StatCard icon={TrendingUp} label="Total volume" value={`${Math.round(periodVolume).toLocaleString()}`} sublabel={`lbs ${periodLabel}`} />
+        <StatCard icon={Dumbbell} label={period === "this-week" ? "Workouts this week" : "Workouts"} value={`${completedPeriodWorkouts.length}${period === "this-week" ? ` / ${weeklyGoal}` : ""}`} sublabel="Completed sessions" />
+        <StatCard icon={TrendingUp} label={humanMetric.title} value={humanMetric.value} sublabel={humanMetric.sublabel} />
         <StatCard icon={Flame} label="Current streak" value={`${streak} day${streak !== 1 ? "s" : ""}`} sublabel={streak > 0 ? "Keep it steady" : "Start today"} />
         <StatCard icon={Activity} label="Calories burned" value={caloriesBurned ? caloriesBurned.toLocaleString() : "—"} sublabel={caloriesBurned ? "Estimated" : "Not tracked yet"} />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <Link
+          to={activeWorkout ? `/workouts/${activeWorkout.id}` : todayWorkout ? `/workouts/${todayWorkout.id}` : "/workouts/new"}
+          className="rounded-2xl border border-neutral-200 bg-white p-4 transition-all hover:shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-900">Continue where you left off</p>
+            <CheckCircle2 className="h-4 w-4 text-neutral-400" />
+          </div>
+          <p className="mt-2 text-sm text-neutral-500">
+            {activeWorkout || todayWorkout
+              ? `${(activeWorkout || todayWorkout).name} · ${getRemainingSetCount(activeWorkout || todayWorkout)} sets left`
+              : "Start or schedule the next workout."}
+          </p>
+        </Link>
+        <button
+          type="button"
+          onClick={() => lastCompletedWorkout ? repeatWorkout(lastCompletedWorkout) : navigate("/workouts/new")}
+          className="rounded-2xl border border-neutral-200 bg-white p-4 text-left transition-all hover:shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-900">Repeat last workout</p>
+            <RotateCcw className="h-4 w-4 text-neutral-400" />
+          </div>
+          <p className="mt-2 text-sm text-neutral-500">
+            {lastCompletedWorkout ? `${lastCompletedWorkout.name} · ${getCompletedSetCount(lastCompletedWorkout)} completed sets` : "Create a routine to repeat later."}
+          </p>
+        </button>
+        <Link to="/progress" className="rounded-2xl border border-neutral-200 bg-white p-4 transition-all hover:shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-900">Latest PR</p>
+            <Trophy className="h-4 w-4 text-neutral-400" />
+          </div>
+          <p className="mt-2 text-sm text-neutral-500">
+            {latestPr?.pr
+              ? `${latestPr.pr.exercise}: ${formatSetPerformance(latestPr.pr)}`
+              : "Beat a previous best set to log a PR."}
+          </p>
+        </Link>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
@@ -169,7 +240,7 @@ export default function Dashboard() {
               </h2>
               <p className="text-sm text-neutral-500 mt-1">
                 {todayWorkout
-                  ? `${todayWorkout.muscleGroup || "Workout"} · ${countSets(todayWorkout)} logged sets`
+                  ? `${todayWorkout.muscleGroup || "Workout"} · ${getCompletedSetCount(todayWorkout)} / ${countSets(todayWorkout)} sets`
                   : "Schedule or start a workout when you are ready."}
               </p>
             </div>
@@ -184,7 +255,13 @@ export default function Dashboard() {
           <div className="mt-5 rounded-xl bg-neutral-50 p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium text-neutral-900">Next step</span>
-              <span className="text-neutral-500">{todayWorkout ? "Review your sets before starting." : "Create a workout from your plan."}</span>
+              <span className="text-neutral-500">
+                {todayWorkout
+                  ? `${getRemainingSetCount(todayWorkout)} sets left · ${formatDuration(getWorkoutDurationMinutes(todayWorkout))}`
+                  : nextScheduledWorkout
+                    ? `Upcoming: ${nextScheduledWorkout.name}`
+                    : "Create a workout from your plan."}
+              </span>
             </div>
           </div>
         </div>
@@ -229,8 +306,8 @@ export default function Dashboard() {
                     <p className="text-xs text-neutral-500 mt-1">{formatDate(workout.date)}{workout.muscleGroup ? ` · ${workout.muscleGroup}` : ""}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-neutral-900">{calculateWorkoutVolume(workout).toLocaleString()}</p>
-                    <p className="text-xs text-neutral-500">lbs volume</p>
+                    <p className="text-sm font-semibold text-neutral-900">{getCompletedSetCount(workout)} / {countSets(workout)}</p>
+                    <p className="text-xs text-neutral-500">{formatDuration(getWorkoutDurationMinutes(workout))}</p>
                   </div>
                 </Link>
               ))

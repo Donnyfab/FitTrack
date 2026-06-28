@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MUSCLE_GROUPS } from "@/lib/constants";
 import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises } from "@/lib/workoutSelection";
+import { clearWorkoutDraft, readWorkoutDraft } from "@/lib/trainingInsights";
 import { ArrowLeft, X, Trash2 } from "lucide-react";
 
 const emptyExercise = () => ({ name: "", sets: [{ reps: "", weight: "", completed: false }] });
@@ -28,6 +29,27 @@ export default function WorkoutForm() {
   useEffect(() => {
     if (isEdit) {
       loadWorkout();
+      return;
+    }
+    const draft = readWorkoutDraft();
+    if (draft) {
+      setName(draft.name || "New Workout");
+      setDate(draft.date || new Date().toISOString().split("T")[0]);
+      setMuscleGroup(draft.muscleGroup || "");
+      setNotes(draft.notes || "");
+      setStatus(draft.status || "planned");
+      setCalories(draft.calories?.toString() || "");
+      setFavorite(Boolean(draft.favorite));
+      setTemplate(Boolean(draft.template));
+      setExercises(draft.exercises?.length ? draft.exercises.map((exercise) => ({
+        name: exercise.name || "",
+        sets: exercise.sets?.length ? exercise.sets.map((set) => ({
+          reps: set.reps?.toString() || "",
+          weight: set.weight?.toString() || "",
+          completed: Boolean(set.completed),
+        })) : [{ reps: "", weight: "", completed: false }],
+      })) : [emptyExercise()]);
+      clearWorkoutDraft();
       return;
     }
     const selectedExercises = readSelectedWorkoutExercises();
@@ -77,6 +99,7 @@ export default function WorkoutForm() {
       if (isEdit) await base44.entities.Workout.update(id, data);
       else await base44.entities.Workout.create(data);
       clearSelectedWorkoutExercises();
+      clearWorkoutDraft();
       navigate(isEdit ? `/workouts/${id}` : "/workouts");
     } finally { setSaving(false); }
   };

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
+import { base44 } from "@/api/base44Client";
 import { applyThemePreference, getStoredThemePreference, normalizeThemePreference } from "@/lib/theme";
 import { getUserFirstName } from "@/lib/userDisplay";
+import { getEarnedBadges } from "@/lib/trainingInsights";
 import { toast } from "@/hooks/use-toast";
 import {
   Bell,
@@ -10,12 +12,19 @@ import {
   Save,
   Shield,
   SlidersHorizontal,
+  Trophy,
   User,
 } from "lucide-react";
 
 const tabs = ["Profile", "Preferences", "Notifications", "Account"];
 const labelClass = "block text-sm font-medium text-neutral-900";
 const inputClass = "flex h-10 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2";
+const trainingDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const equipmentOptions = ["Barbell", "Dumbbells", "Machines", "Cables", "Bodyweight", "Cardio"];
+
+function toggleListValue(values, value) {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
 
 function ToggleRow({ label, description, checked, onChange }) {
   return (
@@ -47,7 +56,13 @@ export default function Settings() {
   const [defaultRestTimer, setDefaultRestTimer] = useState(settings?.default_rest_timer_seconds || 90);
   const [setSummary, setSetSummary] = useState(settings?.show_set_summary ?? true);
   const [autoSave, setAutoSave] = useState(settings?.auto_save_workouts ?? true);
+  const [preferredTrainingDays, setPreferredTrainingDays] = useState(settings?.preferred_training_days || []);
+  const [equipment, setEquipment] = useState(settings?.equipment || []);
+  const [experienceLevel, setExperienceLevel] = useState(settings?.experience_level || "beginner");
+  const [primaryGoalType, setPrimaryGoalType] = useState(settings?.primary_goal_type || "get_stronger");
+  const [workoutSplitPreference, setWorkoutSplitPreference] = useState(settings?.workout_split_preference || "push_pull_legs");
   const [theme, setTheme] = useState(() => normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
+  const [workouts, setWorkouts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [savingTheme, setSavingTheme] = useState(false);
   const [notifications, setNotifications] = useState({
@@ -63,6 +78,11 @@ export default function Settings() {
     setDefaultRestTimer(settings?.default_rest_timer_seconds || 90);
     setSetSummary(settings?.show_set_summary ?? true);
     setAutoSave(settings?.auto_save_workouts ?? true);
+    setPreferredTrainingDays(settings?.preferred_training_days || []);
+    setEquipment(settings?.equipment || []);
+    setExperienceLevel(settings?.experience_level || "beginner");
+    setPrimaryGoalType(settings?.primary_goal_type || "get_stronger");
+    setWorkoutSplitPreference(settings?.workout_split_preference || "push_pull_legs");
     setTheme(normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
     setNotifications({
       workoutReminders: settings?.notification_workout_reminders ?? true,
@@ -76,11 +96,22 @@ export default function Settings() {
     settings?.default_rest_timer_seconds,
     settings?.show_set_summary,
     settings?.auto_save_workouts,
+    settings?.preferred_training_days,
+    settings?.equipment,
+    settings?.experience_level,
+    settings?.primary_goal_type,
+    settings?.workout_split_preference,
     settings?.theme_preference,
     settings?.notification_workout_reminders,
     settings?.notification_goal_progress,
     settings?.notification_weekly_summary,
   ]);
+
+  useEffect(() => {
+    base44.entities.Workout.list("-date", 500)
+      .then(setWorkouts)
+      .catch(() => setWorkouts([]));
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -126,6 +157,11 @@ export default function Settings() {
         notificationWorkoutReminders: notifications.workoutReminders,
         notificationGoalProgress: notifications.goalProgress,
         notificationWeeklySummary: notifications.weeklySummary,
+        preferredTrainingDays,
+        equipment,
+        experienceLevel,
+        primaryGoalType,
+        workoutSplitPreference,
       });
       toast({ title: "Settings saved", description: "Your profile data was updated." });
     } catch (error) {
@@ -138,6 +174,8 @@ export default function Settings() {
       setSaving(false);
     }
   };
+
+  const earnedBadges = getEarnedBadges(workouts);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -191,6 +229,27 @@ export default function Settings() {
                   className={inputClass}
                 />
               </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Trophy className="w-4 h-4 text-neutral-400" />
+                <h2 className="text-base font-semibold text-neutral-900">Badges</h2>
+              </div>
+              {earnedBadges.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {earnedBadges.map((badge) => (
+                    <div key={badge.title} className="rounded-xl bg-neutral-50 p-4">
+                      <p className="text-sm font-semibold text-neutral-900">{badge.title}</p>
+                      <p className="mt-1 text-xs text-neutral-500">{badge.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-neutral-50 p-4">
+                  <p className="text-sm font-medium text-neutral-900">No badges yet</p>
+                  <p className="mt-1 text-xs text-neutral-500">Complete workouts, stack sets, and beat prior bests to unlock badges.</p>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -274,6 +333,77 @@ export default function Settings() {
               <ToggleRow label="Set summary" description="Show a summary after each completed exercise." checked={setSummary} onChange={setSetSummary} />
               <ToggleRow label="Auto-save workouts" description="Save workout edits while logging." checked={autoSave} onChange={setAutoSave} />
             </div>
+            <div className="mt-6 border-t border-neutral-100 pt-5">
+              <h3 className="text-base font-semibold text-neutral-900">Training plan</h3>
+              <p className="mt-1 text-sm text-neutral-500">Use these preferences to shape starter routines and schedule reminders.</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className={labelClass} htmlFor="experienceLevel">Experience level</label>
+                  <select id="experienceLevel" value={experienceLevel} onChange={(event) => setExperienceLevel(event.target.value)} className={inputClass}>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className={labelClass} htmlFor="primaryGoal">Goal type</label>
+                  <select id="primaryGoal" value={primaryGoalType} onChange={(event) => setPrimaryGoalType(event.target.value)} className={inputClass}>
+                    <option value="get_stronger">Get stronger</option>
+                    <option value="build_muscle">Build muscle</option>
+                    <option value="lose_weight">Lose weight</option>
+                    <option value="improve_consistency">Improve consistency</option>
+                    <option value="general_fitness">General fitness</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className={labelClass} htmlFor="workoutSplit">Workout split</label>
+                  <select id="workoutSplit" value={workoutSplitPreference} onChange={(event) => setWorkoutSplitPreference(event.target.value)} className={inputClass}>
+                    <option value="push_pull_legs">Push / Pull / Legs</option>
+                    <option value="upper_lower">Upper / Lower</option>
+                    <option value="full_body">Full Body</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-4 space-y-2">
+                <p className={labelClass}>Preferred training days</p>
+                <div className="flex flex-wrap gap-2">
+                  {trainingDays.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setPreferredTrainingDays((values) => toggleListValue(values, day))}
+                      className={`h-9 rounded-full px-3 text-sm font-medium transition-colors ${
+                        preferredTrainingDays.includes(day)
+                          ? "bg-neutral-900 text-white"
+                          : "bg-neutral-100 text-neutral-600 hover:text-neutral-900"
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 space-y-2">
+                <p className={labelClass}>Equipment</p>
+                <div className="flex flex-wrap gap-2">
+                  {equipmentOptions.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setEquipment((values) => toggleListValue(values, item))}
+                      className={`h-9 rounded-full px-3 text-sm font-medium transition-colors ${
+                        equipment.includes(item)
+                          ? "bg-neutral-900 text-white"
+                          : "bg-neutral-100 text-neutral-600 hover:text-neutral-900"
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -298,7 +428,7 @@ export default function Settings() {
               />
               <ToggleRow
                 label="Weekly summary"
-                description="Send a weekly recap of workouts and volume."
+                description="Send a weekly recap of workouts, sets, PRs, and consistency."
                 checked={notifications.weeklySummary}
                 onChange={(value) => setNotifications({ ...notifications, weeklySummary: value })}
               />

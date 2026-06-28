@@ -10,6 +10,11 @@ import {
 } from "@/lib/workoutUtils";
 import { countSets } from "@/lib/fittrackDemoData";
 import {
+  detectWorkoutPRs,
+  formatSetPerformance,
+  getConsistencyByWeek,
+} from "@/lib/trainingInsights";
+import {
   Activity,
   Dumbbell,
   Flame,
@@ -139,6 +144,17 @@ export default function Progress() {
     name,
     weight: record.weight,
   }));
+  const consistencyData = getConsistencyByWeek(workouts, 6);
+  const prTimeline = filteredWorkouts
+    .flatMap((workout) =>
+      detectWorkoutPRs(workout, workouts.filter((item) => item.id !== workout.id)).map((pr) => ({
+        ...pr,
+        date: workout.date,
+        workoutName: workout.name,
+      }))
+    )
+    .sort((a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`))
+    .slice(0, 6);
   const hasVolumeData = weeklyVolume.some((item) => Number(item.volume) > 0);
   const hasMuscleData = muscleBreakdown.length > 0;
   const hasStrengthData = strengthData.length > 0;
@@ -253,6 +269,46 @@ export default function Progress() {
                   <p className="text-sm font-medium text-neutral-900">No muscle group data</p>
                   <p className="mt-1 text-xs text-neutral-500">Breakdowns will appear after workouts are logged.</p>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "Overview" && (
+        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <h2 className="text-base font-semibold text-neutral-900 mb-4">Weekly Consistency</h2>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={consistencyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                <XAxis dataKey="label" stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis allowDecimals={false} stroke="#9CA3AF" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${value} workouts`, "Completed"]} />
+                <Bar dataKey="workouts" fill="#171717" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <h2 className="text-base font-semibold text-neutral-900 mb-4">PR Timeline</h2>
+            {prTimeline.length > 0 ? (
+              <div className="space-y-2">
+                {prTimeline.map((pr) => (
+                  <div key={`${pr.date}-${pr.exercise}-${pr.weight}-${pr.reps}`} className="rounded-xl border border-neutral-100 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-900">{pr.exercise}</p>
+                        <p className="mt-1 text-xs text-neutral-500">{pr.workoutName} · {pr.date}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-neutral-900">{formatSetPerformance(pr)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl bg-neutral-50 p-4 text-center">
+                <p className="text-sm font-medium text-neutral-900">No PR timeline yet</p>
+                <p className="mt-1 text-xs text-neutral-500">PRs appear when a logged set beats your previous best.</p>
               </div>
             )}
           </div>

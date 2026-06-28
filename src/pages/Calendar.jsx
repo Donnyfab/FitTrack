@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
-import { calculateWorkoutVolume, formatDate } from "@/lib/workoutUtils";
+import { formatDate } from "@/lib/workoutUtils";
 import {
-  countSets,
   getDateKey,
 } from "@/lib/fittrackDemoData";
+import {
+  detectWorkoutPRs,
+  formatDuration,
+  getCompletedSetCount,
+  getMissedWorkoutCount,
+  getSetCount,
+  getWorkoutDurationMinutes,
+  writeWorkoutDraft,
+} from "@/lib/trainingInsights";
 import {
   ArrowLeft,
   ArrowRight,
@@ -42,6 +50,7 @@ function eventTone(type) {
 }
 
 export default function CalendarPage() {
+  const navigate = useNavigate();
   const { settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +74,19 @@ export default function CalendarPage() {
       date: workout.date,
       name: workout.name,
       muscleGroup: workout.muscleGroup || "Workout",
-      type: workout.status || "completed",
+      type: (() => {
+        const status = workout.status || "completed";
+        const eventDate = new Date(`${workout.date}T00:00:00`);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if ((status === "planned" || status === "scheduled") && eventDate < today) return "missed";
+        return status;
+      })(),
       exercises: workout.exercises?.length || 0,
-      volume: calculateWorkoutVolume(workout),
+      completedSets: getCompletedSetCount(workout),
+      plannedSets: getSetCount(workout),
+      duration: getWorkoutDurationMinutes(workout),
+      hasPr: detectWorkoutPRs(workout, workouts.filter((item) => item.id !== workout.id)).length > 0,
       workout,
     }));
   }, [workouts]);
@@ -96,8 +115,37 @@ export default function CalendarPage() {
     const date = new Date(`${event.date}T00:00:00`);
     return event.type === "completed" && date >= weekStart && date <= weekEnd;
   });
-  const weeklyVolume = weeklyCompleted.reduce((sum, event) => sum + (Number(event.volume) || 0), 0);
+  const weeklySets = weeklyCompleted.reduce((sum, event) => sum + event.completedSets, 0);
   const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
+  const missedWorkouts = getMissedWorkoutCount(workouts);
+
+  const openWorkoutDraft = (status) => {
+    writeWorkoutDraft({
+      name: status === "scheduled" ? "Scheduled Workout" : "New Workout",
+      date: selectedDate,
+      muscleGroup: "",
+      notes: "",
+      status,
+      exercises: [{ name: "", sets: [{ reps: "", weight: "", completed: false }] }],
+    });
+    navigate("/workouts/new");
+  };
+
+  const repeatNextWeek = async (event) => {
+    if (!event?.workout) return;
+    const nextDate = new Date(`${event.date}T00:00:00`);
+    nextDate.setDate(nextDate.getDate() + 7);
+    await base44.entities.Workout.create({
+      ...event.workout,
+      date: getDateKey(nextDate),
+      status: "scheduled",
+      exercises: (event.workout.exercises || []).map((exercise) => ({
+        ...exercise,
+        sets: (exercise.sets || []).map((set) => ({ ...set, completed: false })),
+      })),
+    });
+    loadWorkouts();
+  };
 
   if (loading) {
     return (
@@ -113,7 +161,7 @@ export default function CalendarPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">Calendar</h1>
-          <p className="text-sm text-neutral-500 mt-1">Review logged workouts and rest days.</p>
+          <p className="text-sm text-neutral-500 mt-1">Review logged workouts, scheduled sessions, missed plans, and rest days.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -229,12 +277,22 @@ export default function CalendarPage() {
                         <p className="text-xs text-neutral-500">Exercises</p>
                       </div>
                       <div>
-                        <p className="font-semibold text-neutral-900">{(event.volume || calculateWorkoutVolume(event.workout || {})).toLocaleString()}</p>
-                        <p className="text-xs text-neutral-500">Total volume</p>
+                        <p className="font-semibold text-neutral-900">{event.completedSets} / {event.plannedSets}</p>
+                        <p className="text-xs text-neutral-500">Sets completed</p>
                       </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
+                      <span>{formatDuration(event.duration)}</span>
+                      <span>{event.hasPr ? "PR achieved" : "No PR logged"}</span>
                     </div>
                   </Link>
                 ))}
+                <button
+                  onClick={() => repeatNextWeek(selectedEvents[0])}
+                  className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                >
+                  Repeat weekly
+                </button>
               </div>
             ) : (
               <div className="rounded-xl bg-neutral-50 p-5 text-center">
@@ -245,12 +303,12 @@ export default function CalendarPage() {
             )}
 
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <Link to="/workouts/new" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+              <button onClick={() => openWorkoutDraft("scheduled")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
                 <Plus className="w-4 h-4" /> Schedule
-              </Link>
-              <Link to="/workouts/new" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 text-sm font-medium text-white hover:bg-neutral-800">
+              </button>
+              <button onClick={() => openWorkoutDraft("planned")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 text-sm font-medium text-white hover:bg-neutral-800">
                 <Play className="w-4 h-4" /> Start
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -271,8 +329,12 @@ export default function CalendarPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-neutral-600">Total weekly volume</span>
-                <span className="text-sm font-semibold text-neutral-900">{weeklyVolume.toLocaleString()} lb</span>
+                <span className="text-sm text-neutral-600">Sets completed</span>
+                <span className="text-sm font-semibold text-neutral-900">{weeklySets}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-600">Missed planned workouts</span>
+                <span className="text-sm font-semibold text-neutral-900">{missedWorkouts}</span>
               </div>
             </div>
           </div>

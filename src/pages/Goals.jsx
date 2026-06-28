@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { GOAL_STATUSES, GOAL_TYPES, getGoalStatusLabel, getGoalTypeLabel } from "@/lib/constants";
 import { daysUntil } from "@/lib/fittrackDemoData";
-import { formatDate } from "@/lib/workoutUtils";
+import { formatDate, getPersonalRecords } from "@/lib/workoutUtils";
 import EmptyState from "@/components/EmptyState";
 import {
   CheckCircle2,
@@ -37,8 +38,51 @@ const typeLabel = (type) => {
 
 const clampProgress = (value) => Math.min(100, Math.max(0, Number(value) || 0));
 
+function parseTargetNumber(goal) {
+  const match = `${goal.title || ""} ${goal.target || ""} ${goal.notes || ""}`.match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : null;
+}
+
+function autoGoalProgress(goal, workouts, weeklyGoal) {
+  const targetNumber = parseTargetNumber(goal);
+  if (goal.type === "workout_consistency" || goal.type === "improve_consistency") {
+    const today = new Date();
+    const weekStart = new Date(today);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(today.getDate() - today.getDay());
+    const completed = workouts.filter((workout) => {
+      const date = new Date(`${workout.date}T00:00:00`);
+      return (workout.status || "completed") === "completed" && date >= weekStart && date <= today;
+    }).length;
+    const target = targetNumber || weeklyGoal || 4;
+    return {
+      progress: clampProgress(Math.round((completed / target) * 100)),
+      current: `${completed} workouts this week`,
+      target: `${target} workouts`,
+      note: "Auto-updated from completed workouts.",
+    };
+  }
+
+  if (goal.type === "strength_goal" && targetNumber) {
+    const records = getPersonalRecords(workouts);
+    const query = `${goal.title || ""} ${goal.target || ""}`.toLowerCase();
+    const matchingRecord = Object.entries(records).find(([name]) => query.includes(name.toLowerCase()))?.[1];
+    const bestWeight = matchingRecord?.weight || 0;
+    return {
+      progress: clampProgress(Math.round((bestWeight / targetNumber) * 100)),
+      current: bestWeight ? `${bestWeight} lb best set` : "No matching lift yet",
+      target: `${targetNumber} lb`,
+      note: "Auto-updates when a matching lift beats your best.",
+    };
+  }
+
+  return null;
+}
+
 export default function Goals() {
+  const { settings } = useAuth();
   const [goals, setGoals] = useState([]);
+  const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Active Goals");
   const [showForm, setShowForm] = useState(false);
@@ -52,7 +96,12 @@ export default function Goals() {
 
   const loadGoals = async () => {
     try {
-      setGoals(await base44.entities.Goal.list("-created_date", 100));
+      const [goalRows, workoutRows] = await Promise.all([
+        base44.entities.Goal.list("-created_date", 100),
+        base44.entities.Workout.list("-date", 500),
+      ]);
+      setGoals(goalRows);
+      setWorkouts(workoutRows);
     } finally {
       setLoading(false);
     }
@@ -217,7 +266,8 @@ export default function Goals() {
         <div className="grid gap-3 xl:grid-cols-2">
           {filteredGoals.map((goal) => {
             const target = goal.target || "Not set";
-            const progress = Number(goal.progress) || 0;
+            const automatic = autoGoalProgress(goal, workouts, Number(settings?.weekly_workout_goal) || 4);
+            const progress = Math.max(Number(goal.progress) || 0, automatic?.progress || 0);
             const days = daysUntil(goal.deadline);
             const completed = goal.status === "completed";
             return (
@@ -247,11 +297,11 @@ export default function Goals() {
                 <div className="grid grid-cols-3 gap-3 mt-4">
                   <div className="rounded-xl bg-neutral-50 p-3">
                     <p className="text-xs text-neutral-500">Current</p>
-                    <p className="text-sm font-semibold text-neutral-900 mt-1">{progress}%</p>
+                    <p className="text-sm font-semibold text-neutral-900 mt-1">{automatic?.current || `${progress}%`}</p>
                   </div>
                   <div className="rounded-xl bg-neutral-50 p-3">
                     <p className="text-xs text-neutral-500">Target</p>
-                    <p className="text-sm font-semibold text-neutral-900 mt-1 truncate">{target}</p>
+                    <p className="text-sm font-semibold text-neutral-900 mt-1 truncate">{automatic?.target || target}</p>
                   </div>
                   <div className="rounded-xl bg-neutral-50 p-3">
                     <p className="text-xs text-neutral-500">Days left</p>
@@ -266,6 +316,7 @@ export default function Goals() {
                   <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
                     <div className="h-full bg-neutral-900 rounded-full transition-all" style={{ width: `${progress}%` }} />
                   </div>
+                  {automatic?.note && <p className="mt-2 text-xs text-neutral-500">{automatic.note}</p>}
                 </div>
               </div>
             );

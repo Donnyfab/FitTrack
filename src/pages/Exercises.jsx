@@ -3,6 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import {
+  estimateOneRepMax,
+  formatSetPerformance,
+  getExerciseHistory,
+  getExercisePersonalRecord,
+  getLastExercisePerformance,
+} from "@/lib/trainingInsights";
+import {
   Activity,
   Dumbbell,
   HeartPulse,
@@ -24,6 +31,7 @@ const iconForGroup = (group) => {
 export default function Exercises() {
   const navigate = useNavigate();
   const [exercises, setExercises] = useState(exerciseCatalog);
+  const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
   const [activeCategory, setActiveCategory] = useState("Chest");
@@ -46,9 +54,13 @@ export default function Exercises() {
 
   const loadExercises = async () => {
     try {
-      const savedExercises = await base44.entities.UserExercise.list("name", 500);
+      const [savedExercises, workoutRows] = await Promise.all([
+        base44.entities.UserExercise.list("name", 500),
+        base44.entities.Workout.list("-date", 500),
+      ]);
       const merged = mergeExercises(savedExercises);
       setExercises(merged);
+      setWorkouts(workoutRows);
       setSelectedExercise((current) => merged.find((exercise) => exercise.name === current?.name) || merged[0] || null);
     } finally {
       setLoading(false);
@@ -134,6 +146,19 @@ export default function Exercises() {
     navigate("/workouts/new");
   };
 
+  const selectedHistory = useMemo(
+    () => getExerciseHistory(workouts, selectedExercise?.name, { limit: 6 }),
+    [selectedExercise?.name, workouts]
+  );
+  const selectedPr = useMemo(
+    () => getExercisePersonalRecord(workouts, selectedExercise?.name),
+    [selectedExercise?.name, workouts]
+  );
+  const selectedLast = useMemo(
+    () => getLastExercisePerformance(workouts, selectedExercise?.name),
+    [selectedExercise?.name, workouts]
+  );
+
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -202,6 +227,7 @@ export default function Exercises() {
           {filtered.map((exercise) => {
             const Icon = iconForGroup(exercise.muscleGroup);
             const selected = selectedExercise?.name === exercise.name;
+            const lastEntry = getLastExercisePerformance(workouts, exercise.name);
             return (
               <button
                 key={exercise.name}
@@ -232,6 +258,7 @@ export default function Exercises() {
                 </div>
                 <p className="mt-4 font-medium text-neutral-900">{exercise.name}</p>
                 <p className="mt-1 text-sm text-neutral-500">{exercise.muscleGroup}</p>
+                <p className="mt-3 text-xs text-neutral-400">Last used: {lastEntry ? formatSetPerformance(lastEntry.bestSet) : "No history"}</p>
                 {exercise.custom && <p className="mt-3 text-xs text-neutral-400">Custom exercise</p>}
               </button>
             );
@@ -256,19 +283,43 @@ export default function Exercises() {
           <div className="grid grid-cols-2 gap-3 mt-5">
             <div className="rounded-xl bg-neutral-50 p-3">
               <p className="text-xs text-neutral-500">Personal record</p>
-              <p className="text-sm font-semibold text-neutral-900 mt-1">No PR recorded</p>
+              <p className="text-sm font-semibold text-neutral-900 mt-1">{formatSetPerformance(selectedPr?.bestSet)}</p>
             </div>
             <div className="rounded-xl bg-neutral-50 p-3">
               <p className="text-xs text-neutral-500">Last completed</p>
-              <p className="text-sm font-semibold text-neutral-900 mt-1">No history yet</p>
+              <p className="text-sm font-semibold text-neutral-900 mt-1">{formatSetPerformance(selectedLast?.bestSet)}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="rounded-xl bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Estimated 1RM</p>
+              <p className="text-sm font-semibold text-neutral-900 mt-1">
+                {selectedPr?.bestSet ? `${estimateOneRepMax(selectedPr.bestSet.weight, selectedPr.bestSet.reps).toLocaleString()} lb` : "No estimate"}
+              </p>
+            </div>
+            <div className="rounded-xl bg-neutral-50 p-3">
+              <p className="text-xs text-neutral-500">Logged sessions</p>
+              <p className="text-sm font-semibold text-neutral-900 mt-1">{selectedHistory.length}</p>
             </div>
           </div>
 
           <div className="mt-5">
             <p className="text-sm font-medium text-neutral-900">Past performance history</p>
-            <div className="mt-3 rounded-xl border border-neutral-100 p-4">
-              <p className="text-sm text-neutral-500">History appears after this exercise is logged in a workout.</p>
-            </div>
+            {selectedHistory.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {selectedHistory.map((entry) => (
+                  <div key={`${entry.workout.id}-${entry.exercise.name}`} className="flex items-center justify-between rounded-xl border border-neutral-100 px-3 py-2">
+                    <span className="text-sm text-neutral-600">{entry.workout.date}</span>
+                    <span className="text-sm font-semibold text-neutral-900">{formatSetPerformance(entry.bestSet)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-neutral-100 p-4">
+                <p className="text-sm text-neutral-500">History appears after this exercise is logged in a workout.</p>
+              </div>
+            )}
           </div>
 
           <div className="mt-5 rounded-xl bg-neutral-50 p-4">

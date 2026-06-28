@@ -15,6 +15,7 @@ import {
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Clock,
   Copy,
   MoreHorizontal,
@@ -68,6 +69,7 @@ export default function WorkoutDetail() {
   const [availableExercises, setAvailableExercises] = useState(exerciseCatalog);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [exerciseQuery, setExerciseQuery] = useState("");
+  const [expandedExercises, setExpandedExercises] = useState(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
   const [saveState, setSaveState] = useState("saved");
   const [finishSummary, setFinishSummary] = useState(null);
@@ -238,6 +240,18 @@ export default function WorkoutDetail() {
     );
     setLoggedExercises(nextExercises);
     saveExercises(nextExercises);
+  };
+
+  const toggleExerciseExpanded = (exerciseIndex) => {
+    setExpandedExercises((current) => {
+      const next = new Set(current);
+      if (next.has(exerciseIndex)) {
+        next.delete(exerciseIndex);
+      } else {
+        next.add(exerciseIndex);
+      }
+      return next;
+    });
   };
 
   const updateSetValue = (exerciseIndex, setIndex, field, value) => {
@@ -582,110 +596,122 @@ export default function WorkoutDetail() {
                 excludeWorkoutId: id,
               });
               const pr = prByExercise.get(exercise.name);
+              const setCount = (exercise.sets || []).length;
+              const completedExerciseSets = (exercise.sets || []).filter((set) => set.completed).length;
+              const isExpanded = expandedExercises.has(exerciseIndex);
               return (
-            <div className="flex items-start justify-between gap-3 border-b border-neutral-100 px-4 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-neutral-900 truncate">{exercise.name}</p>
-                  {pr && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-900">
-                      <Trophy className="h-3 w-3" /> New PR
-                    </span>
-                  )}
+                <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleExerciseExpanded(exerciseIndex)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    aria-expanded={isExpanded}
+                    aria-controls={`exercise-sets-${exerciseIndex}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium text-neutral-900">{exercise.name}</p>
+                        {pr && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-900">
+                            <Trophy className="h-3 w-3" /> New PR
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-500">{completedExerciseSets}/{setCount} Done</p>
+                      <p className="mt-1 hidden text-xs text-neutral-500 sm:block">
+                        Last time: {formatSetPerformance(lastPerformance?.bestSet)} · {getTryTodaySuggestion(lastPerformance)}
+                      </p>
+                    </div>
+                    <ChevronDown className={`h-5 w-5 shrink-0 text-neutral-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                  </button>
+                  <button
+                    onClick={() => toggleFavorite(exercise.name)}
+                    className="rounded-lg p-2 text-neutral-400 transition-colors hover:bg-neutral-50 hover:text-neutral-900"
+                    aria-label={`Favorite ${exercise.name}`}
+                  >
+                    <Star className={`w-4 h-4 ${favoriteExercises.includes(exercise.name) ? "fill-neutral-900 text-neutral-900" : ""}`} />
+                  </button>
                 </div>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Last time: {formatSetPerformance(lastPerformance?.bestSet)} · {getTryTodaySuggestion(lastPerformance)}
-                </p>
-              </div>
-              <button
-                onClick={() => toggleFavorite(exercise.name)}
-                className="p-2 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-50 transition-colors"
-                aria-label={`Favorite ${exercise.name}`}
-              >
-                <Star className={`w-4 h-4 ${favoriteExercises.includes(exercise.name) ? "fill-neutral-900 text-neutral-900" : ""}`} />
-              </button>
-            </div>
               );
             })()}
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead>
-                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                    <th className="px-4 py-2 w-20">Set</th>
-                    <th className="px-4 py-2">Weight</th>
-                    <th className="px-4 py-2">Reps</th>
-                    <th className="px-4 py-2 w-12"></th>
-                    <th className="px-4 py-2 w-12 text-right">Done</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-50">
+            {expandedExercises.has(exerciseIndex) && (
+              <div id={`exercise-sets-${exerciseIndex}`}>
+                <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem] gap-2 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                  <span>Set</span>
+                  <span>Weight</span>
+                  <span>Reps</span>
+                  <span className="sr-only">Done</span>
+                </div>
+                <div className="divide-y divide-neutral-50">
                   {(exercise.sets || []).map((set, setIndex) => (
-                    <tr key={setIndex} className={`transition-colors ${set.completed ? "bg-neutral-50/80" : ""}`}>
-                      <td className={`px-4 py-3 text-neutral-500 ${set.completed ? "line-through decoration-2 opacity-55" : ""}`}>
+                    <div
+                      key={setIndex}
+                      className={`grid grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem] items-center gap-2 px-4 py-3 transition-colors ${
+                        set.completed ? "bg-neutral-50/90" : ""
+                      }`}
+                    >
+                      <div className={`min-w-0 text-sm text-neutral-500 ${set.completed ? "line-through decoration-2 opacity-55" : ""}`}>
                         <span>Set {setIndex + 1}</span>
                         {prByExercise.get(exercise.name)?.setIndex === setIndex && (
-                          <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-900">PR</span>
+                          <span className="mt-1 block w-fit rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-900">PR</span>
                         )}
-                      </td>
-                      <td className="px-4 py-2">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={set.weight ?? ""}
-                          onChange={(event) => updateSetValue(exerciseIndex, setIndex, "weight", event.target.value)}
-                          className={`h-9 w-24 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400 ${set.completed ? "line-through opacity-55" : ""}`}
-                          aria-label={`${exercise.name} set ${setIndex + 1} weight`}
-                        />
-                      </td>
-                      <td className="px-4 py-2">
-                        <input
-                          type="number"
-                          min="0"
-                          value={set.reps ?? ""}
-                          onChange={(event) => updateSetValue(exerciseIndex, setIndex, "reps", event.target.value)}
-                          className={`h-9 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400 ${set.completed ? "line-through opacity-55" : ""}`}
-                          aria-label={`${exercise.name} set ${setIndex + 1} reps`}
-                        />
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <button
-                          onClick={() => removeSet(exerciseIndex, setIndex)}
-                          disabled={(exercise.sets || []).length <= 1}
-                          className="rounded-lg p-1.5 text-neutral-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40"
-                          aria-label={`Remove ${exercise.name} set ${setIndex + 1}`}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => toggleSet(exerciseIndex, setIndex)}
-                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
-                            set.completed
-                              ? "border-blue-600 bg-blue-600 text-white"
-                              : "border-neutral-200 bg-white text-neutral-300 hover:border-blue-500 hover:text-blue-600"
-                          }`}
-                          aria-label={`${set.completed ? "Uncheck" : "Complete"} ${exercise.name} set ${setIndex + 1}`}
-                        >
-                          <Check className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={set.weight ?? ""}
+                        onChange={(event) => updateSetValue(exerciseIndex, setIndex, "weight", event.target.value)}
+                        className={`h-10 min-w-0 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-900 focus:border-neutral-400 focus:outline-none ${
+                          set.completed ? "line-through opacity-55" : ""
+                        }`}
+                        aria-label={`${exercise.name} set ${setIndex + 1} weight`}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={set.reps ?? ""}
+                        onChange={(event) => updateSetValue(exerciseIndex, setIndex, "reps", event.target.value)}
+                        className={`h-10 min-w-0 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-900 focus:border-neutral-400 focus:outline-none ${
+                          set.completed ? "line-through opacity-55" : ""
+                        }`}
+                        aria-label={`${exercise.name} set ${setIndex + 1} reps`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleSet(exerciseIndex, setIndex)}
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
+                          set.completed
+                            ? "border-blue-600 bg-blue-600 text-white"
+                            : "border-neutral-200 bg-white text-neutral-300 hover:border-blue-500 hover:text-blue-600"
+                        }`}
+                        aria-label={`${set.completed ? "Uncheck" : "Complete"} ${exercise.name} set ${setIndex + 1}`}
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="border-t border-neutral-100 px-4 py-3">
-              <button
-                onClick={() => addSet(exerciseIndex)}
-                className="inline-flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900"
-              >
-                <Plus className="w-4 h-4" />
-                Add Set
-              </button>
-            </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-neutral-100 px-4 py-3">
+                  <button
+                    onClick={() => addSet(exerciseIndex)}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Set
+                  </button>
+                  {(exercise.sets || []).length > 1 && (
+                    <button
+                      onClick={() => removeSet(exerciseIndex, (exercise.sets || []).length - 1)}
+                      className="inline-flex items-center gap-2 text-sm font-medium text-neutral-400 hover:text-red-600"
+                    >
+                      <X className="h-4 w-4" />
+                      Remove last
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

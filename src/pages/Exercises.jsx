@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import {
+  bestSetFromSets,
   estimateOneRepMax,
   formatSetPerformance,
   getExerciseHistory,
-  getExercisePersonalRecord,
   getLastExercisePerformance,
+  getExercisePersonalRecord,
 } from "@/lib/trainingInsights";
 import {
   Activity,
@@ -22,6 +23,8 @@ import { equipmentOptions, exerciseCatalog, exerciseCategories } from "@/lib/fit
 
 const tabs = ["All", "My Exercises", "Favorites"];
 const categoryFilters = ["All", ...exerciseCategories];
+const INITIAL_VISIBLE_EXERCISES = 48;
+const LOAD_MORE_EXERCISES = 48;
 
 const iconForGroup = (group) => {
   if (group === "Cardio") return HeartPulse;
@@ -37,6 +40,7 @@ export default function Exercises() {
   const [activeTab, setActiveTab] = useState("All");
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeEquipment, setActiveEquipment] = useState("All");
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_EXERCISES);
   const [query, setQuery] = useState("");
   const [selectedExercise, setSelectedExercise] = useState(exerciseCatalog[0]);
   const [selectedForWorkout, setSelectedForWorkout] = useState([]);
@@ -46,6 +50,10 @@ export default function Exercises() {
   useEffect(() => {
     loadExercises();
   }, []);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_EXERCISES);
+  }, [activeCategory, activeEquipment, activeTab, query]);
 
   const mergeExercises = (savedExercises) => {
     const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
@@ -97,6 +105,26 @@ export default function Exercises() {
       }),
     [activeCategory, activeEquipment, activeTab, exercises, query]
   );
+
+  const visibleExercises = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount]
+  );
+
+  const lastPerformanceByExercise = useMemo(() => {
+    const rows = [...(workouts || [])].sort(
+      (a, b) => new Date(`${b.date}T00:00:00`) - new Date(`${a.date}T00:00:00`)
+    );
+    const map = new Map();
+    rows.forEach((workout) => {
+      (workout.exercises || []).forEach((exercise) => {
+        if (!exercise?.name || map.has(exercise.name)) return;
+        const bestSet = bestSetFromSets(exercise.sets || []);
+        map.set(exercise.name, { workout, exercise, bestSet });
+      });
+    });
+    return map;
+  }, [workouts]);
 
   const toggleFavorite = async (exerciseName) => {
     const current = exercises.find((exercise) => exercise.name === exerciseName);
@@ -270,10 +298,10 @@ export default function Exercises() {
               Loading exercises...
             </div>
           )}
-          {filtered.map((exercise) => {
+          {visibleExercises.map((exercise) => {
             const Icon = iconForGroup(exercise.muscleGroup);
             const selected = selectedExercise?.name === exercise.name;
-            const lastEntry = getLastExercisePerformance(workouts, exercise.name);
+            const lastEntry = lastPerformanceByExercise.get(exercise.name);
             return (
               <button
                 key={exercise.name}
@@ -315,6 +343,14 @@ export default function Exercises() {
               <p className="text-sm font-medium text-neutral-900">No exercises match this equipment</p>
               <p className="mt-1 text-sm text-neutral-500">Try a different equipment option or clear the filter.</p>
             </div>
+          )}
+          {!loading && filtered.length > visibleExercises.length && (
+            <button
+              onClick={() => setVisibleCount((count) => count + LOAD_MORE_EXERCISES)}
+              className="col-span-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50"
+            >
+              Show {Math.min(LOAD_MORE_EXERCISES, filtered.length - visibleExercises.length)} more exercises
+            </button>
           )}
         </div>
 

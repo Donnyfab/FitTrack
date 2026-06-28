@@ -116,8 +116,8 @@ export default function Workouts() {
       workoutId,
       startX: touch.clientX,
       startY: touch.clientY,
-      startOffset: swipedWorkoutId === workoutId ? 92 : 0,
-      deltaX: swipedWorkoutId === workoutId ? 92 : 0,
+      startOffset: swipedWorkoutId === workoutId ? -92 : 0,
+      deltaX: swipedWorkoutId === workoutId ? -92 : 0,
       dragging: true,
       lockedAxis: null,
     });
@@ -143,16 +143,16 @@ export default function Workouts() {
 
     if (axis === "x") event.preventDefault();
 
-    const nextOffset = Math.max(0, swipeState.startOffset + rawDeltaX);
-    const resistedOffset = nextOffset > 92 ? 92 + (nextOffset - 92) * 0.18 : nextOffset;
+    const nextOffset = Math.min(0, swipeState.startOffset + rawDeltaX);
+    const resistedOffset = nextOffset < -92 ? -92 + (nextOffset + 92) * 0.18 : nextOffset;
     setSwipeState((current) => current?.workoutId === workoutId
-      ? { ...current, lockedAxis: axis, deltaX: Math.min(resistedOffset, 108) }
+      ? { ...current, lockedAxis: axis, deltaX: Math.max(resistedOffset, -108) }
       : current
     );
   };
 
   const handleSwipeEnd = (workoutId) => {
-    const nextOpen = swipeState?.workoutId === workoutId && swipeState.deltaX > 44;
+    const nextOpen = swipeState?.workoutId === workoutId && swipeState.deltaX < -44;
     setSwipedWorkoutId(nextOpen ? workoutId : null);
     setSwipeState(null);
   };
@@ -279,11 +279,11 @@ export default function Workouts() {
               swipeState?.workoutId === workout.id
                 ? swipeState.deltaX
                 : swipedWorkoutId === workout.id
-                  ? 92
+                  ? -92
                   : 0;
             return (
               <div key={workout.id} className="relative overflow-hidden rounded-xl bg-white">
-                <div className="absolute inset-y-0 left-0 z-0 flex w-[92px] items-center justify-center rounded-xl border border-neutral-200 bg-white">
+                <div className="absolute inset-y-0 right-0 z-0 flex w-[92px] items-center justify-center rounded-xl border border-neutral-200 bg-white">
                   <button
                     type="button"
                     onClick={() => deleteWorkout(workout)}

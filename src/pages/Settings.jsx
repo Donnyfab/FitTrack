@@ -104,6 +104,7 @@ export default function Settings() {
   const [theme, setTheme] = useState(() => normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
   const [workouts, setWorkouts] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [savingTheme, setSavingTheme] = useState(false);
   const [notifications, setNotifications] = useState({
     workoutReminders: settings?.notification_workout_reminders ?? true,
@@ -218,21 +219,67 @@ export default function Settings() {
     }
   };
 
+  const saveProfileAvatar = async (nextAvatarUrl) => {
+    await updateUserProfile({
+      fullName,
+      avatarUrl: nextAvatarUrl,
+      unitsSystem,
+      weeklyWorkoutGoal,
+      themePreference: theme,
+      defaultRestTimerSeconds: defaultRestTimer,
+      showSetSummary: setSummary,
+      autoSaveWorkouts: autoSave,
+      notificationWorkoutReminders: notifications.workoutReminders,
+      notificationGoalProgress: notifications.goalProgress,
+      notificationWeeklySummary: notifications.weeklySummary,
+      preferredTrainingDays,
+      equipment,
+      experienceLevel,
+      primaryGoalType,
+      workoutSplitPreference,
+    });
+  };
+
   const handleAvatarChange = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
 
+    const previousAvatarUrl = avatarUrl;
+    setSavingAvatar(true);
     try {
       const resizedAvatar = await resizeAvatarFile(file);
       setAvatarUrl(resizedAvatar);
-      toast({ title: "Photo ready", description: "Save settings to keep this profile picture." });
+      await saveProfileAvatar(resizedAvatar);
+      toast({ title: "Photo saved", description: "Your profile picture was updated." });
     } catch (error) {
+      setAvatarUrl(previousAvatarUrl);
       toast({
         title: "Photo not added",
         description: error.message || "Could not use that image.",
         variant: "destructive",
       });
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    const previousAvatarUrl = avatarUrl;
+    setAvatarUrl("");
+    setSavingAvatar(true);
+    try {
+      await saveProfileAvatar("");
+      toast({ title: "Photo removed", description: "Your profile picture was cleared." });
+    } catch (error) {
+      setAvatarUrl(previousAvatarUrl);
+      toast({
+        title: "Photo not removed",
+        description: error.message || "Could not update your profile picture.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAvatar(false);
     }
   };
 
@@ -289,15 +336,18 @@ export default function Settings() {
                   />
                   <label
                     htmlFor="profilePhoto"
-                    className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+                    className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800 ${
+                      savingAvatar ? "pointer-events-none opacity-70" : "cursor-pointer"
+                    }`}
                   >
                     <Camera className="h-4 w-4" />
-                    {avatarUrl ? "Change photo" : "Add photo"}
+                    {savingAvatar ? "Saving..." : avatarUrl ? "Change photo" : "Add photo"}
                   </label>
                   {avatarUrl && (
                     <button
                       type="button"
-                      onClick={() => setAvatarUrl("")}
+                      onClick={handleAvatarRemove}
+                      disabled={savingAvatar}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
                     >
                       <Trash2 className="h-4 w-4" />

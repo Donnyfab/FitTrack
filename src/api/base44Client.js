@@ -101,6 +101,7 @@ function mapUserExercise(row) {
     id: row.id,
     name: row.name,
     muscleGroup: row.muscle_group,
+    equipment: row.equipment,
     icon: row.icon,
     tip: row.form_tips,
     favorite: Boolean(row.is_favorite),
@@ -113,6 +114,7 @@ function toDbUserExercise(data) {
   const row = {};
   if ('name' in data) row.name = data.name;
   if ('muscleGroup' in data) row.muscle_group = data.muscleGroup;
+  if ('equipment' in data) row.equipment = data.equipment || null;
   if ('icon' in data) row.icon = data.icon || null;
   if ('tip' in data) row.form_tips = data.tip || null;
   if ('favorite' in data) row.is_favorite = Boolean(data.favorite);

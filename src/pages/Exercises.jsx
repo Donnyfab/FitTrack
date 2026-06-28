@@ -18,9 +18,10 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { exerciseCatalog, exerciseCategories } from "@/lib/fittrackDemoData";
+import { equipmentOptions, exerciseCatalog, exerciseCategories } from "@/lib/fittrackDemoData";
 
 const tabs = ["All", "My Exercises", "Favorites"];
+const categoryFilters = ["All", ...exerciseCategories];
 
 const iconForGroup = (group) => {
   if (group === "Cardio") return HeartPulse;
@@ -34,12 +35,13 @@ export default function Exercises() {
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
-  const [activeCategory, setActiveCategory] = useState("Chest");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [activeEquipment, setActiveEquipment] = useState("All");
   const [query, setQuery] = useState("");
   const [selectedExercise, setSelectedExercise] = useState(exerciseCatalog[0]);
   const [selectedForWorkout, setSelectedForWorkout] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", muscleGroup: "Chest", tip: "" });
+  const [form, setForm] = useState({ name: "", muscleGroup: "Chest", equipment: "Dumbbell", tip: "" });
 
   useEffect(() => {
     loadExercises();
@@ -47,7 +49,19 @@ export default function Exercises() {
 
   const mergeExercises = (savedExercises) => {
     const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
-    const catalog = exerciseCatalog.map((exercise) => ({ ...exercise, ...(savedByName.get(exercise.name) || {}) }));
+    const catalog = exerciseCatalog.map((exercise) => {
+      const saved = savedByName.get(exercise.name);
+      return saved
+        ? {
+            ...exercise,
+            id: saved.id,
+            favorite: saved.favorite,
+            custom: saved.custom,
+            tip: saved.tip || exercise.tip,
+            created_date: saved.created_date,
+          }
+        : exercise;
+    });
     const custom = savedExercises.filter((exercise) => !exerciseCatalog.some((item) => item.name === exercise.name));
     return [...custom, ...catalog];
   };
@@ -74,13 +88,14 @@ export default function Exercises() {
           activeTab === "All" ||
           (activeTab === "My Exercises" && exercise.custom) ||
           (activeTab === "Favorites" && exercise.favorite);
-        const matchesCategory = exercise.muscleGroup === activeCategory;
-        const matchesQuery = `${exercise.name} ${exercise.muscleGroup}`
+        const matchesCategory = activeCategory === "All" || exercise.muscleGroup === activeCategory;
+        const matchesEquipment = activeEquipment === "All" || exercise.equipment === activeEquipment;
+        const matchesQuery = `${exercise.name} ${exercise.muscleGroup} ${exercise.equipment || ""}`
           .toLowerCase()
           .includes(query.toLowerCase());
-        return matchesTab && matchesCategory && matchesQuery;
+        return matchesTab && matchesCategory && matchesEquipment && matchesQuery;
       }),
-    [activeCategory, activeTab, exercises, query]
+    [activeCategory, activeEquipment, activeTab, exercises, query]
   );
 
   const toggleFavorite = async (exerciseName) => {
@@ -110,6 +125,7 @@ export default function Exercises() {
     const nextExercise = {
       name: form.name,
       muscleGroup: form.muscleGroup,
+      equipment: form.equipment,
       icon: form.muscleGroup.toLowerCase(),
       favorite: false,
       custom: true,
@@ -119,8 +135,9 @@ export default function Exercises() {
     setExercises((items) => [savedExercise, ...items.filter((item) => item.name !== savedExercise.name)]);
     setSelectedExercise(savedExercise);
     setActiveCategory(savedExercise.muscleGroup);
+    setActiveEquipment(savedExercise.equipment || "All");
     setActiveTab("My Exercises");
-    setForm({ name: "", muscleGroup: "Chest", tip: "" });
+    setForm({ name: "", muscleGroup: "Chest", equipment: "Dumbbell", tip: "" });
     setShowCreate(false);
   };
 
@@ -202,7 +219,7 @@ export default function Exercises() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {exerciseCategories.map((category) => (
+        {categoryFilters.map((category) => (
           <button
             key={category}
             onClick={() => setActiveCategory(category)}
@@ -215,6 +232,35 @@ export default function Exercises() {
             {category}
           </button>
         ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Equipment</p>
+          {activeEquipment !== "All" && (
+            <button
+              onClick={() => setActiveEquipment("All")}
+              className="text-xs font-medium text-neutral-500 hover:text-neutral-900"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {["All", ...equipmentOptions].map((equipment) => (
+            <button
+              key={equipment}
+              onClick={() => setActiveEquipment(equipment)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                activeEquipment === equipment
+                  ? "bg-neutral-900 text-white"
+                  : "bg-white border border-neutral-200 text-neutral-600 hover:text-neutral-900"
+              }`}
+            >
+              {equipment}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid items-start gap-4 xl:grid-cols-[1fr_420px]">
@@ -258,11 +304,18 @@ export default function Exercises() {
                 </div>
                 <p className="mt-4 font-medium text-neutral-900">{exercise.name}</p>
                 <p className="mt-1 text-sm text-neutral-500">{exercise.muscleGroup}</p>
+                <p className="mt-1 text-xs font-medium text-neutral-400">{exercise.equipment || "Any equipment"}</p>
                 <p className="mt-3 text-xs text-neutral-400">Last used: {lastEntry ? formatSetPerformance(lastEntry.bestSet) : "No history"}</p>
                 {exercise.custom && <p className="mt-3 text-xs text-neutral-400">Custom exercise</p>}
               </button>
             );
           })}
+          {!loading && filtered.length === 0 && (
+            <div className="col-span-full rounded-2xl border border-neutral-200 bg-white p-6 text-center">
+              <p className="text-sm font-medium text-neutral-900">No exercises match this equipment</p>
+              <p className="mt-1 text-sm text-neutral-500">Try a different equipment option or clear the filter.</p>
+            </div>
+          )}
         </div>
 
         <aside className="bg-white rounded-2xl border border-neutral-200 p-5 h-fit">
@@ -271,6 +324,7 @@ export default function Exercises() {
               <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Exercise Detail</p>
               <h2 className="text-xl font-semibold text-neutral-900 mt-2">{selectedExercise?.name}</h2>
               <p className="text-sm text-neutral-500 mt-1">Primary: {selectedExercise?.muscleGroup}</p>
+              <p className="text-xs font-medium text-neutral-400 mt-1">{selectedExercise?.equipment || "Any equipment"}</p>
             </div>
             <button
               onClick={() => toggleFavorite(selectedExercise.name)}
@@ -388,6 +442,12 @@ export default function Exercises() {
                 <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Primary muscle group</label>
                 <select value={form.muscleGroup} onChange={(event) => setForm({ ...form, muscleGroup: event.target.value })} className="w-full h-11 px-3 bg-white border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400">
                   {exerciseCategories.map((category) => <option key={category}>{category}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Equipment</label>
+                <select value={form.equipment} onChange={(event) => setForm({ ...form, equipment: event.target.value })} className="w-full h-11 px-3 bg-white border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-neutral-400">
+                  {equipmentOptions.map((equipment) => <option key={equipment}>{equipment}</option>)}
                 </select>
               </div>
               <div>

@@ -1,5 +1,18 @@
 export const MUSCLE_GROUPS = [
-  "Chest", "Back", "Shoulders", "Arms", "Legs", "Glutes", "Core", "Full Body", "Cardio"
+  "Chest",
+  "Biceps",
+  "Triceps",
+  "Back",
+  "Shoulders",
+  "Abs",
+  "Quadriceps",
+  "Hamstrings",
+  "Hips",
+  "Calves",
+  "Forearms",
+  "Neck",
+  "Cardio",
+  "Full Body",
 ];
 
 export const GOAL_TYPES = [

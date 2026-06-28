@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { MUSCLE_GROUPS } from "@/lib/constants";
 import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises, writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import { clearWorkoutDraft, readWorkoutDraft, writeWorkoutDraft } from "@/lib/trainingInsights";
-import { ArrowLeft, CalendarDays, Repeat, X, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, ChevronDown, Repeat, X, Trash2 } from "lucide-react";
 
 const weekdayOptions = [
   { value: 1, label: "Monday" },
@@ -66,6 +66,7 @@ export default function WorkoutForm() {
   const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
+  const [muscleDropdownOpen, setMuscleDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (isEdit) {
@@ -113,6 +114,12 @@ export default function WorkoutForm() {
   };
 
   const muscleGroupLabel = muscleGroups.join(", ");
+  const muscleGroupButtonLabel =
+    muscleGroups.length === 0
+      ? "Select..."
+      : muscleGroups.length <= 2
+        ? muscleGroupLabel
+        : `${muscleGroups.slice(0, 2).join(", ")} +${muscleGroups.length - 2}`;
   const toggleMuscleGroup = (group) => {
     setMuscleGroups((groups) =>
       groups.includes(group) ? groups.filter((item) => item !== group) : [...groups, group]
@@ -206,29 +213,77 @@ export default function WorkoutForm() {
           <div><label className={labelClass}>Workout Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Push Day, Leg Day, Upper Body" required className="h-11" /></div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} required className="h-11" /></div>
-            <div><label className={labelClass}>Status</label><select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}><option value="completed">Completed</option><option value="scheduled">Scheduled</option><option value="planned">Planned</option><option value="missed">Missed</option></select></div>
+            <div className="relative">
+              <label className={labelClass}>Muscle Group</label>
+              <button
+                type="button"
+                onClick={() => setMuscleDropdownOpen((open) => !open)}
+                className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-left text-sm transition-colors focus:outline-none focus:border-neutral-400"
+                aria-expanded={muscleDropdownOpen}
+              >
+                <span className={`truncate ${muscleGroups.length ? "text-neutral-900" : "text-neutral-400"}`}>
+                  {muscleGroupButtonLabel}
+                </span>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${muscleDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+              {muscleDropdownOpen && (
+                <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-[min(21rem,calc(100vw-3rem))] overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {MUSCLE_GROUPS.map((group) => {
+                      const selected = muscleGroups.includes(group);
+                      return (
+                        <button
+                          key={group}
+                          type="button"
+                          onClick={() => toggleMuscleGroup(group)}
+                          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-neutral-800 hover:bg-neutral-50"
+                        >
+                          <span>{group}</span>
+                          {selected && <Check className="h-4 w-4 text-blue-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between border-t border-neutral-100 p-2">
+                    <button
+                      type="button"
+                      onClick={() => setMuscleGroups([])}
+                      className="rounded-lg px-3 py-2 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMuscleDropdownOpen(false)}
+                      className="rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white hover:bg-neutral-800"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <div>
-            <label className={labelClass}>Muscle Groups</label>
-            <div className="flex flex-wrap gap-2">
-              {MUSCLE_GROUPS.map((group) => (
+          {muscleGroups.length > 0 && (
+            <div className="-mt-1 flex flex-wrap gap-1.5">
+              {muscleGroups.map((group) => (
                 <button
                   key={group}
                   type="button"
                   onClick={() => toggleMuscleGroup(group)}
-                  className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${
-                    muscleGroups.includes(group)
-                      ? "border-neutral-900 bg-neutral-900 text-white"
-                      : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900"
-                  }`}
+                  className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-200"
                 >
                   {group}
+                  <X className="h-3 w-3" />
                 </button>
               ))}
             </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className={labelClass}>Status</label><select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}><option value="completed">Completed</option><option value="scheduled">Scheduled</option><option value="planned">Planned</option><option value="missed">Missed</option></select></div>
+            <div><label className={labelClass}>Calories</label><Input type="number" min="0" value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="Optional" className="h-11" /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className={labelClass}>Calories</label><Input type="number" min="0" value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="Optional" className="h-11" /></div>
             <div>
               <label className={labelClass}>Repeat</label>
               <button

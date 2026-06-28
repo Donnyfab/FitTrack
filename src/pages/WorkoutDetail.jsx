@@ -86,7 +86,19 @@ export default function WorkoutDetail() {
         base44.entities.Workout.list("-date", 500),
       ]);
       const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
-      const mergedCatalog = exerciseCatalog.map((exercise) => ({ ...exercise, ...(savedByName.get(exercise.name) || {}) }));
+      const mergedCatalog = exerciseCatalog.map((exercise) => {
+        const saved = savedByName.get(exercise.name);
+        return saved
+          ? {
+              ...exercise,
+              id: saved.id,
+              favorite: saved.favorite,
+              custom: saved.custom,
+              tip: saved.tip || exercise.tip,
+              created_date: saved.created_date,
+            }
+          : exercise;
+      });
       const customExercises = savedExercises.filter((exercise) => !exerciseCatalog.some((item) => item.name === exercise.name));
       setWorkout(data);
       setLoggedExercises(data.exercises || []);
@@ -324,7 +336,7 @@ export default function WorkoutDetail() {
     (exercise.sets || []).some((set) => !set.completed)
   );
   const pickerResults = availableExercises.filter((exercise) =>
-    `${exercise.name} ${exercise.muscleGroup}`.toLowerCase().includes(exerciseQuery.toLowerCase())
+    `${exercise.name} ${exercise.muscleGroup} ${exercise.equipment || ""}`.toLowerCase().includes(exerciseQuery.toLowerCase())
   );
   const workoutPrs = detectWorkoutPRs(displayWorkout, previousWorkouts);
   const prByExercise = new Map(workoutPrs.map((pr) => [pr.exercise, pr]));
@@ -582,6 +594,7 @@ export default function WorkoutDetail() {
                 <span>
                   <span className="block font-medium text-neutral-900">{exercise.name}</span>
                   <span className="block text-xs text-neutral-500">{exercise.muscleGroup}</span>
+                  <span className="block text-xs text-neutral-400">{exercise.equipment || "Any equipment"}</span>
                 </span>
                 <Plus className="h-4 w-4 text-neutral-400" />
               </button>

@@ -109,12 +109,17 @@ export default function Workouts() {
   const handleSwipeStart = (event, workoutId) => {
     const touch = event.touches?.[0];
     if (!touch) return;
+    if (swipedWorkoutId && swipedWorkoutId !== workoutId) {
+      setSwipedWorkoutId(null);
+    }
     setSwipeState({
       workoutId,
       startX: touch.clientX,
       startY: touch.clientY,
-      deltaX: swipedWorkoutId === workoutId ? 96 : 0,
+      startOffset: swipedWorkoutId === workoutId ? 88 : 0,
+      deltaX: swipedWorkoutId === workoutId ? 88 : 0,
       dragging: true,
+      lockedAxis: null,
     });
   };
 
@@ -123,16 +128,31 @@ export default function Workouts() {
     if (!touch || !swipeState || swipeState.workoutId !== workoutId) return;
     const rawDeltaX = touch.clientX - swipeState.startX;
     const rawDeltaY = touch.clientY - swipeState.startY;
-    if (Math.abs(rawDeltaY) > Math.abs(rawDeltaX) && Math.abs(rawDeltaY) > 18) return;
-    if (rawDeltaX > 8) event.preventDefault();
+    const axis =
+      swipeState.lockedAxis ||
+      (Math.abs(rawDeltaX) > 8 || Math.abs(rawDeltaY) > 8
+        ? Math.abs(rawDeltaX) > Math.abs(rawDeltaY)
+          ? "x"
+          : "y"
+        : null);
+
+    if (axis === "y") {
+      setSwipeState((current) => current?.workoutId === workoutId ? { ...current, lockedAxis: "y" } : current);
+      return;
+    }
+
+    if (axis === "x") event.preventDefault();
+
+    const nextOffset = Math.max(0, swipeState.startOffset + rawDeltaX);
+    const resistedOffset = nextOffset > 88 ? 88 + (nextOffset - 88) * 0.18 : nextOffset;
     setSwipeState((current) => current?.workoutId === workoutId
-      ? { ...current, deltaX: Math.min(Math.max(rawDeltaX, 0), 104) }
+      ? { ...current, lockedAxis: axis, deltaX: Math.min(resistedOffset, 108) }
       : current
     );
   };
 
   const handleSwipeEnd = (workoutId) => {
-    const nextOpen = swipeState?.workoutId === workoutId && swipeState.deltaX > 64;
+    const nextOpen = swipeState?.workoutId === workoutId && swipeState.deltaX > 44;
     setSwipedWorkoutId(nextOpen ? workoutId : null);
     setSwipeState(null);
   };
@@ -259,26 +279,30 @@ export default function Workouts() {
               swipeState?.workoutId === workout.id
                 ? swipeState.deltaX
                 : swipedWorkoutId === workout.id
-                  ? 96
+                  ? 88
                   : 0;
             return (
-              <div key={workout.id} className="relative overflow-hidden rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => deleteWorkout(workout)}
-                  className="absolute left-0 top-0 z-0 flex h-full w-24 items-center justify-center gap-1.5 rounded-xl bg-red-600 text-sm font-semibold text-white"
-                  aria-label={`Delete ${workout.name}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete
-                </button>
+              <div key={workout.id} className="relative overflow-hidden rounded-xl bg-white">
+                <div className="absolute inset-y-0 left-0 z-0 flex w-[88px] items-stretch">
+                  <button
+                    type="button"
+                    onClick={() => deleteWorkout(workout)}
+                    className="my-px flex w-full items-center justify-center gap-1.5 rounded-l-xl bg-[#ff3b30] text-xs font-semibold text-white shadow-none"
+                    aria-label={`Delete ${workout.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                </div>
                 <article
                   onTouchStart={(event) => handleSwipeStart(event, workout.id)}
                   onTouchMove={(event) => handleSwipeMove(event, workout.id)}
                   onTouchEnd={() => handleSwipeEnd(workout.id)}
                   onTouchCancel={() => handleSwipeEnd(workout.id)}
                   style={{ transform: `translateX(${swipeOffset}px)`, touchAction: "pan-y" }}
-                  className="relative z-10 grid gap-3 bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 hover:shadow-sm transition-transform duration-200 md:grid-cols-[1fr_auto] md:items-center"
+                  className={`relative z-10 grid gap-3 bg-white rounded-xl border border-neutral-200 p-4 shadow-sm shadow-neutral-950/[0.03] hover:border-neutral-300 transition-[transform,border-color,box-shadow] md:grid-cols-[1fr_auto] md:items-center ${
+                    swipeState?.workoutId === workout.id ? "duration-0 ease-linear" : "duration-300 ease-out"
+                  }`}
                 >
                   <div className="min-w-0 flex items-start gap-3">
                     <div className="mt-0.5 w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">

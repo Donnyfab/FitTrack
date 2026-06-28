@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
+import { isGoogleCalendarConfigured, syncEventsToGoogleCalendar } from "@/lib/googleCalendarSync";
 import { formatDate } from "@/lib/workoutUtils";
+import { toast } from "@/hooks/use-toast";
 import {
   getDateKey,
 } from "@/lib/fittrackDemoData";
@@ -20,8 +22,10 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  CalendarCheck,
   CalendarPlus,
   Dumbbell,
+  Loader2,
   Play,
   Plus,
   Repeat,
@@ -81,6 +85,7 @@ export default function CalendarPage() {
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => getDateKey(new Date()));
   const [showPlanBuilder, setShowPlanBuilder] = useState(false);
+  const [googleSyncing, setGoogleSyncing] = useState(false);
   const [scheduleForm, setScheduleForm] = useState(() => ({
     dayOfWeek: 1,
     templateWorkoutId: "",
@@ -177,6 +182,13 @@ export default function CalendarPage() {
   const selectedEvents = eventsByDate[selectedDate] || [];
   const selectedHasEvents = selectedEvents.length > 0;
   const workoutTemplates = workouts.filter((workout) => (workout.exercises || []).length > 0);
+  const visibleMonthEvents = events.filter((event) => {
+    const eventDate = new Date(`${event.date}T00:00:00`);
+    return (
+      eventDate.getFullYear() === activeMonth.getFullYear() &&
+      eventDate.getMonth() === activeMonth.getMonth()
+    );
+  });
 
   const today = new Date();
   const todayKey = getDateKey(today);
@@ -303,6 +315,34 @@ export default function CalendarPage() {
     loadCalendarData();
   };
 
+  const syncVisibleMonthToGoogle = async () => {
+    if (!isGoogleCalendarConfigured()) {
+      toast({
+        title: "Google Calendar is not connected",
+        description: "Add VITE_GOOGLE_CLIENT_ID in Vercel, then reload FitTrack.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGoogleSyncing(true);
+    try {
+      const result = await syncEventsToGoogleCalendar(visibleMonthEvents);
+      toast({
+        title: "Google Calendar synced",
+        description: `${result.created} created, ${result.updated} updated for ${monthLabel(activeMonth)}.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Google sync failed",
+        description: error.message || "Could not sync FitTrack to Google Calendar.",
+        variant: "destructive",
+      });
+    } finally {
+      setGoogleSyncing(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -320,6 +360,15 @@ export default function CalendarPage() {
           <p className="text-sm text-neutral-500 mt-1">Review logged workouts, scheduled sessions, missed plans, and rest days.</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={syncVisibleMonthToGoogle}
+            disabled={googleSyncing || visibleMonthEvents.length === 0}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:pointer-events-none disabled:opacity-50"
+          >
+            {googleSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarCheck className="h-4 w-4" />}
+            <span className="hidden sm:inline">{googleSyncing ? "Syncing..." : "Sync Google"}</span>
+            <span className="sm:hidden">Google</span>
+          </button>
           <button
             onClick={() => setShowPlanBuilder((value) => !value)}
             className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50"

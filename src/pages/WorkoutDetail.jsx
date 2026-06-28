@@ -70,6 +70,8 @@ export default function WorkoutDetail() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [exerciseQuery, setExerciseQuery] = useState("");
   const [expandedExercises, setExpandedExercises] = useState(new Set());
+  const [swipedExerciseKey, setSwipedExerciseKey] = useState(null);
+  const [exerciseSwipeState, setExerciseSwipeState] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [saveState, setSaveState] = useState("saved");
   const [finishSummary, setFinishSummary] = useState(null);
@@ -252,6 +254,77 @@ export default function WorkoutDetail() {
       }
       return next;
     });
+  };
+
+  const getExerciseKey = (exercise, exerciseIndex) => `${exercise.name}-${exerciseIndex}`;
+
+  const handleExerciseSwipeStart = (event, exerciseKey) => {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    if (swipedExerciseKey && swipedExerciseKey !== exerciseKey) {
+      setSwipedExerciseKey(null);
+    }
+    setExerciseSwipeState({
+      exerciseKey,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startOffset: swipedExerciseKey === exerciseKey ? 92 : 0,
+      deltaX: swipedExerciseKey === exerciseKey ? 92 : 0,
+      lockedAxis: null,
+    });
+  };
+
+  const handleExerciseSwipeMove = (event, exerciseKey) => {
+    const touch = event.touches?.[0];
+    if (!touch || !exerciseSwipeState || exerciseSwipeState.exerciseKey !== exerciseKey) return;
+    const rawDeltaX = touch.clientX - exerciseSwipeState.startX;
+    const rawDeltaY = touch.clientY - exerciseSwipeState.startY;
+    const axis =
+      exerciseSwipeState.lockedAxis ||
+      (Math.abs(rawDeltaX) > 8 || Math.abs(rawDeltaY) > 8
+        ? Math.abs(rawDeltaX) > Math.abs(rawDeltaY)
+          ? "x"
+          : "y"
+        : null);
+
+    if (axis === "y") {
+      setExerciseSwipeState((current) => current?.exerciseKey === exerciseKey ? { ...current, lockedAxis: "y" } : current);
+      return;
+    }
+
+    if (axis === "x") event.preventDefault();
+
+    const nextOffset = Math.max(0, exerciseSwipeState.startOffset + rawDeltaX);
+    const resistedOffset = nextOffset > 92 ? 92 + (nextOffset - 92) * 0.18 : nextOffset;
+    setExerciseSwipeState((current) => current?.exerciseKey === exerciseKey
+      ? { ...current, lockedAxis: axis, deltaX: Math.min(resistedOffset, 108) }
+      : current
+    );
+  };
+
+  const handleExerciseSwipeEnd = (exerciseKey) => {
+    const nextOpen = exerciseSwipeState?.exerciseKey === exerciseKey && exerciseSwipeState.deltaX > 44;
+    setSwipedExerciseKey(nextOpen ? exerciseKey : null);
+    setExerciseSwipeState(null);
+  };
+
+  const removeExercise = (exerciseIndex) => {
+    const exercise = loggedExercises[exerciseIndex];
+    if (!exercise) return;
+    if (!window.confirm(`Remove ${exercise.name} from this workout?`)) return;
+    const nextExercises = loggedExercises.filter((_, currentIndex) => currentIndex !== exerciseIndex);
+    setLoggedExercises(nextExercises);
+    setExpandedExercises((current) => {
+      const next = new Set();
+      current.forEach((index) => {
+        if (index < exerciseIndex) next.add(index);
+        if (index > exerciseIndex) next.add(index - 1);
+      });
+      return next;
+    });
+    setSwipedExerciseKey(null);
+    setExerciseSwipeState(null);
+    saveExercises(nextExercises);
   };
 
   const updateSetValue = (exerciseIndex, setIndex, field, value) => {
@@ -588,8 +661,39 @@ export default function WorkoutDetail() {
       </div>
 
       <div className="space-y-3">
-        {loggedExercises.map((exercise, exerciseIndex) => (
-          <div key={`${exercise.name}-${exerciseIndex}`} className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+        {loggedExercises.map((exercise, exerciseIndex) => {
+          const exerciseKey = getExerciseKey(exercise, exerciseIndex);
+          const swipeOffset =
+            exerciseSwipeState?.exerciseKey === exerciseKey
+              ? exerciseSwipeState.deltaX
+              : swipedExerciseKey === exerciseKey
+                ? 92
+                : 0;
+          const deleteVisible = swipeOffset > 8 || swipedExerciseKey === exerciseKey;
+          return (
+          <div
+            key={exerciseKey}
+            className="relative overflow-hidden rounded-2xl"
+            onTouchStart={(event) => handleExerciseSwipeStart(event, exerciseKey)}
+            onTouchMove={(event) => handleExerciseSwipeMove(event, exerciseKey)}
+            onTouchEnd={() => handleExerciseSwipeEnd(exerciseKey)}
+            onTouchCancel={() => handleExerciseSwipeEnd(exerciseKey)}
+          >
+            <button
+              type="button"
+              onClick={() => removeExercise(exerciseIndex)}
+              className={`absolute inset-y-0 right-0 z-20 flex w-24 items-center justify-center gap-1.5 rounded-2xl border border-red-100 bg-white text-sm font-semibold text-red-600 shadow-sm transition-opacity ${
+                deleteVisible ? "opacity-100" : "pointer-events-none opacity-0"
+              }`}
+              aria-label={`Delete ${exercise.name}`}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+            <div
+              className="relative z-10 overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-transform duration-200 ease-out"
+              style={{ transform: `translateX(${swipeOffset}px)` }}
+            >
             {(() => {
               const lastPerformance = getLastExercisePerformance(previousWorkouts, exercise.name, {
                 beforeDate: displayWorkout.date,
@@ -713,7 +817,9 @@ export default function WorkoutDetail() {
               </div>
             )}
           </div>
-        ))}
+          </div>
+          );
+        })}
       </div>
 
       <button

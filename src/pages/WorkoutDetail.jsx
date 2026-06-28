@@ -17,10 +17,10 @@ import {
   Check,
   Clock,
   Copy,
-  Dumbbell,
   MoreHorizontal,
   Pause,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   Search,
@@ -37,6 +37,18 @@ const formatTimer = (seconds) => {
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
 };
 
+const parseTimerInput = (value) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+  if (trimmed.includes(":")) {
+    const [minutes, seconds] = trimmed.split(":").map((part) => Number(part));
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds < 0 || seconds > 59) return null;
+    return Math.max(1, Math.round(minutes * 60 + seconds));
+  }
+  const minutes = Number(trimmed);
+  return Number.isFinite(minutes) ? Math.max(1, Math.round(minutes * 60)) : null;
+};
+
 export default function WorkoutDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -46,9 +58,12 @@ export default function WorkoutDetail() {
   const [allWorkouts, setAllWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workoutSeconds, setWorkoutSeconds] = useState(0);
+  const [workoutTimerRunning, setWorkoutTimerRunning] = useState(false);
   const defaultRestSeconds = Number(settings?.default_rest_timer_seconds) || 90;
+  const [restDurationSeconds, setRestDurationSeconds] = useState(defaultRestSeconds);
   const [restSeconds, setRestSeconds] = useState(defaultRestSeconds);
-  const [restPaused, setRestPaused] = useState(false);
+  const [restRunning, setRestRunning] = useState(false);
+  const [customRestInput, setCustomRestInput] = useState(formatTimer(defaultRestSeconds));
   const [favoriteExercises, setFavoriteExercises] = useState([]);
   const [availableExercises, setAvailableExercises] = useState(exerciseCatalog);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
@@ -62,21 +77,47 @@ export default function WorkoutDetail() {
   }, [id]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setWorkoutSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(`fittrack-workout-timer:${id}`) || "null");
+      setWorkoutSeconds(Number(saved?.seconds) || 0);
+    } catch {
+      setWorkoutSeconds(0);
+    }
+    setWorkoutTimerRunning(false);
+  }, [id]);
 
   useEffect(() => {
+    if (!workoutTimerRunning) return undefined;
+    const interval = window.setInterval(() => setWorkoutSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(interval);
+  }, [workoutTimerRunning]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      `fittrack-workout-timer:${id}`,
+      JSON.stringify({ seconds: workoutSeconds })
+    );
+  }, [id, workoutSeconds]);
+
+  useEffect(() => {
+    setRestDurationSeconds(defaultRestSeconds);
     setRestSeconds(defaultRestSeconds);
+    setCustomRestInput(formatTimer(defaultRestSeconds));
   }, [defaultRestSeconds]);
 
   useEffect(() => {
-    if (restPaused) return undefined;
+    if (!restRunning) return undefined;
     const interval = window.setInterval(() => {
-      setRestSeconds((value) => (value > 0 ? value - 1 : defaultRestSeconds));
+      setRestSeconds((value) => {
+        if (value <= 1) {
+          setRestRunning(false);
+          return 0;
+        }
+        return value - 1;
+      });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [defaultRestSeconds, restPaused]);
+  }, [restRunning]);
 
   const loadWorkout = async () => {
     try {
@@ -133,6 +174,31 @@ export default function WorkoutDetail() {
     }
   };
 
+  const setRestDuration = (seconds) => {
+    setRestDurationSeconds(seconds);
+    setRestSeconds(seconds);
+    setCustomRestInput(formatTimer(seconds));
+    setRestRunning(false);
+  };
+
+  const applyCustomRestTime = () => {
+    const parsed = parseTimerInput(customRestInput);
+    if (!parsed) return;
+    setRestDuration(parsed);
+  };
+
+  const startRestTimer = () => {
+    if (restSeconds <= 0) setRestSeconds(restDurationSeconds);
+    setRestRunning(true);
+  };
+
+  const stopRestTimer = () => setRestRunning(false);
+
+  const restartRestTimer = () => {
+    setRestSeconds(restDurationSeconds);
+    setRestRunning(true);
+  };
+
   const toggleSet = (exerciseIndex, setIndex) => {
     const currentSet = loggedExercises[exerciseIndex]?.sets?.[setIndex];
     const willComplete = !currentSet?.completed;
@@ -148,8 +214,8 @@ export default function WorkoutDetail() {
     );
     setLoggedExercises(nextExercises);
     if (willComplete) {
-      setRestSeconds(defaultRestSeconds);
-      setRestPaused(false);
+      setRestSeconds(restDurationSeconds);
+      setRestRunning(true);
     }
     saveExercises(nextExercises);
   };
@@ -236,6 +302,8 @@ export default function WorkoutDetail() {
   };
 
   const finishWorkout = async () => {
+    setWorkoutTimerRunning(false);
+    setRestRunning(false);
     const nextExercises = loggedExercises.map((exercise) => ({
       ...exercise,
       sets: (exercise.sets || []).map((set) => ({ ...set, completed: true })),
@@ -327,10 +395,12 @@ export default function WorkoutDetail() {
   }
 
   const totalVolume = calculateWorkoutVolume(displayWorkout);
+  const totalSets = countSets(displayWorkout);
   const completedSets = loggedExercises.reduce(
     (sum, exercise) => sum + (exercise.sets || []).filter((set) => set.completed).length,
     0
   );
+  const progressPercent = totalSets > 0 ? Math.min(100, Math.round((completedSets / totalSets) * 100)) : 0;
   const exerciseCount = loggedExercises.length;
   const nextExercise = loggedExercises.find((exercise) =>
     (exercise.sets || []).some((set) => !set.completed)
@@ -347,8 +417,8 @@ export default function WorkoutDetail() {
         <ArrowLeft className="w-4 h-4" /> Workouts
       </Link>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight break-words">{displayWorkout.name}</h1>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <span className="text-sm text-neutral-500">{formatDateLong(displayWorkout.date)}</span>
@@ -360,68 +430,132 @@ export default function WorkoutDetail() {
             )}
           </div>
         </div>
-        <div className="relative flex items-center gap-2 shrink-0">
-          <Link to={`/workouts/${id}/edit`} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
-            <Pencil className="w-3.5 h-3.5" /> Edit
-          </Link>
+        <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm shadow-neutral-950/[0.03]">
+          <Clock className="hidden h-4 w-4 text-neutral-300 sm:block" />
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Active</p>
+            <p className="text-lg font-semibold leading-tight text-neutral-900">{formatTimer(workoutSeconds)}</p>
+          </div>
           <button
-            onClick={() => setMoreOpen((value) => !value)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
-            aria-expanded={moreOpen}
-            aria-haspopup="menu"
+            type="button"
+            onClick={() => setWorkoutTimerRunning((running) => !running)}
+            className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-white"
+            aria-label={workoutTimerRunning ? "Pause workout timer" : "Start workout timer"}
           >
-            <MoreHorizontal className="w-4 h-4" /> More
-          </button>
-          {moreOpen && (
-            <div className="absolute right-0 top-11 z-20 w-56 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl" role="menu">
-              <button onClick={duplicateAsTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
-                <Copy className="h-4 w-4 text-neutral-400" /> Save as template
-              </button>
-              <button onClick={() => { setRestSeconds(defaultRestSeconds); setMoreOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
-                <RotateCcw className="h-4 w-4 text-neutral-400" /> Reset rest timer
-              </button>
-            </div>
-          )}
-          <button onClick={handleDelete} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-            <Trash2 className="w-3.5 h-3.5" /> Delete
+            {workoutTimerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}
           </button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Active timer</p>
-            <Clock className="w-4 h-4 text-neutral-300" />
-          </div>
-          <p className="text-2xl font-semibold text-neutral-900">{formatTimer(workoutSeconds)}</p>
-          <p className="text-xs text-neutral-500 mt-1">Workout in progress</p>
+      <div className="relative flex flex-wrap items-center gap-2">
+        <Link to={`/workouts/${id}/edit`} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
+          <Pencil className="w-3.5 h-3.5" /> Edit
+        </Link>
+        <button
+          onClick={() => setMoreOpen((value) => !value)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
+          aria-expanded={moreOpen}
+          aria-haspopup="menu"
+        >
+          <MoreHorizontal className="w-4 h-4" /> More
+        </button>
+        <div className="relative flex items-center gap-2 shrink-0">
+          {moreOpen && (
+            <div className="absolute left-0 top-11 z-20 w-56 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl" role="menu">
+              <button onClick={duplicateAsTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
+                <Copy className="h-4 w-4 text-neutral-400" /> Save as template
+              </button>
+              <button onClick={() => { setRestDuration(defaultRestSeconds); setMoreOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
+                <RotateCcw className="h-4 w-4 text-neutral-400" /> Reset rest timer
+              </button>
+            </div>
+          )}
         </div>
+        <button onClick={handleDelete} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+          <Trash2 className="w-3.5 h-3.5" /> Delete
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Workout progress</p>
+            <p className="mt-1 text-sm font-medium text-neutral-900">{completedSets}/{totalSets} sets completed</p>
+          </div>
+          <p className="text-sm font-semibold text-neutral-900">{progressPercent}%</p>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-100">
+          <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progressPercent}%` }} />
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Rest timer</p>
             <TimerReset className="w-4 h-4 text-neutral-300" />
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-2xl font-semibold text-neutral-900">{formatTimer(restSeconds)}</p>
-            <button
-              onClick={() => setRestPaused((value) => !value)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              <Pause className="w-3.5 h-3.5" />
-              {restPaused ? "Resume" : "Pause"}
-            </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-3xl font-semibold text-neutral-900">{formatTimer(restSeconds)}</p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={startRestTimer} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800">
+                <Play className="w-3.5 h-3.5 fill-current" />
+                Start
+              </button>
+              <button onClick={stopRestTimer} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                <Pause className="w-3.5 h-3.5" />
+                Stop
+              </button>
+              <button onClick={restartRestTimer} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restart
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[60, 120, 180, 240, 300].map((seconds) => (
+              <button
+                key={seconds}
+                onClick={() => setRestDuration(seconds)}
+                className={`h-8 rounded-lg px-3 text-xs font-semibold transition-colors ${
+                  restDurationSeconds === seconds
+                    ? "bg-neutral-900 text-white"
+                    : "border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+                }`}
+              >
+                {seconds / 60}m
+              </button>
+            ))}
+            <div className="flex h-8 items-center overflow-hidden rounded-lg border border-neutral-200 bg-white">
+              <input
+                value={customRestInput}
+                onChange={(event) => setCustomRestInput(event.target.value)}
+                onBlur={applyCustomRestTime}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    applyCustomRestTime();
+                  }
+                }}
+                placeholder="1:57"
+                className="h-full w-16 px-2 text-xs font-medium text-neutral-900 outline-none"
+                aria-label="Custom rest timer"
+              />
+              <button onClick={applyCustomRestTime} className="h-full border-l border-neutral-200 px-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">
+                Set
+              </button>
+            </div>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">Exercises</p>
           <p className="text-2xl font-semibold text-neutral-900">{exerciseCount}</p>
-          <p className="text-xs text-neutral-500 mt-1">{completedSets} sets completed</p>
+          <p className="text-xs text-neutral-500 mt-1">{completedSets}/{totalSets} sets completed</p>
         </div>
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">Total volume</p>
           <p className="text-2xl font-semibold text-neutral-900">{totalVolume.toLocaleString()}</p>
-          <p className="text-xs text-neutral-500 mt-1">lbs · {countSets(displayWorkout)} sets</p>
+          <p className="text-xs text-neutral-500 mt-1">lbs · {totalSets} sets</p>
         </div>
       </div>
 
@@ -436,10 +570,6 @@ export default function WorkoutDetail() {
           <p className={`text-xs ${saveState === "error" ? "text-red-500" : "text-neutral-400"}`}>
             {saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : settings?.auto_save_workouts === false ? "Saved on finish" : "Saved"}
           </p>
-          <button onClick={finishWorkout} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
-            <Check className="w-4 h-4" />
-            Finish Workout
-          </button>
         </div>
       </div>
 
@@ -484,14 +614,14 @@ export default function WorkoutDetail() {
                     <th className="px-4 py-2 w-20">Set</th>
                     <th className="px-4 py-2">Weight</th>
                     <th className="px-4 py-2">Reps</th>
-                    <th className="px-4 py-2 text-right">Done</th>
                     <th className="px-4 py-2 w-12"></th>
+                    <th className="px-4 py-2 w-12 text-right">Done</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-50">
                   {(exercise.sets || []).map((set, setIndex) => (
-                    <tr key={setIndex}>
-                      <td className="px-4 py-3 text-neutral-500">
+                    <tr key={setIndex} className={`transition-colors ${set.completed ? "bg-neutral-50/80" : ""}`}>
+                      <td className={`px-4 py-3 text-neutral-500 ${set.completed ? "line-through decoration-2 opacity-55" : ""}`}>
                         <span>Set {setIndex + 1}</span>
                         {prByExercise.get(exercise.name)?.setIndex === setIndex && (
                           <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-900">PR</span>
@@ -504,7 +634,7 @@ export default function WorkoutDetail() {
                           step="0.5"
                           value={set.weight ?? ""}
                           onChange={(event) => updateSetValue(exerciseIndex, setIndex, "weight", event.target.value)}
-                          className="h-9 w-24 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400"
+                          className={`h-9 w-24 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400 ${set.completed ? "line-through opacity-55" : ""}`}
                           aria-label={`${exercise.name} set ${setIndex + 1} weight`}
                         />
                       </td>
@@ -514,17 +644,8 @@ export default function WorkoutDetail() {
                           min="0"
                           value={set.reps ?? ""}
                           onChange={(event) => updateSetValue(exerciseIndex, setIndex, "reps", event.target.value)}
-                          className="h-9 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400"
+                          className={`h-9 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400 ${set.completed ? "line-through opacity-55" : ""}`}
                           aria-label={`${exercise.name} set ${setIndex + 1} reps`}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(set.completed)}
-                          onChange={() => toggleSet(exerciseIndex, setIndex)}
-                          className="h-4 w-4 rounded border-neutral-300 accent-neutral-900"
-                          aria-label={`Complete ${exercise.name} set ${setIndex + 1}`}
                         />
                       </td>
                       <td className="px-4 py-2 text-right">
@@ -535,6 +656,20 @@ export default function WorkoutDetail() {
                           aria-label={`Remove ${exercise.name} set ${setIndex + 1}`}
                         >
                           <X className="h-4 w-4" />
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => toggleSet(exerciseIndex, setIndex)}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                            set.completed
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : "border-neutral-200 bg-white text-neutral-300 hover:border-blue-500 hover:text-blue-600"
+                          }`}
+                          aria-label={`${set.completed ? "Uncheck" : "Complete"} ${exercise.name} set ${setIndex + 1}`}
+                        >
+                          <Check className="h-4 w-4" />
                         </button>
                       </td>
                     </tr>
@@ -609,6 +744,19 @@ export default function WorkoutDetail() {
           <p className="text-sm text-neutral-700 whitespace-pre-wrap">{displayWorkout.notes}</p>
         </div>
       )}
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-neutral-900">Ready to wrap up?</p>
+            <p className="mt-1 text-sm text-neutral-500">{completedSets}/{totalSets} sets completed.</p>
+          </div>
+          <button onClick={finishWorkout} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700">
+            <Check className="w-4 h-4" />
+            Finish Workout
+          </button>
+        </div>
+      </div>
 
       {finishSummary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">

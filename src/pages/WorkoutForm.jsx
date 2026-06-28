@@ -26,6 +26,15 @@ function parseMuscleGroups(value) {
     .filter(Boolean);
 }
 
+function formatFormDate(value) {
+  if (!value) return "Select date";
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function normalizeExercise(exercise) {
   return {
     name: exercise.name || "",
@@ -212,7 +221,22 @@ export default function WorkoutForm() {
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
           <div><label className={labelClass}>Workout Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Push Day, Leg Day, Upper Body" required className="h-11" /></div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="min-w-0"><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} required className="h-11 min-w-0" /></div>
+            <div className="min-w-0">
+              <label className={labelClass}>Date</label>
+              <div className="relative h-11 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white px-3">
+                <span className="pointer-events-none flex h-full items-center text-sm text-neutral-900">
+                  {formatFormDate(date)}
+                </span>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(event) => handleDateChange(event.target.value)}
+                  required
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  aria-label="Workout date"
+                />
+              </div>
+            </div>
             <div className="relative">
               <label className={labelClass}>Muscle Group</label>
               <button

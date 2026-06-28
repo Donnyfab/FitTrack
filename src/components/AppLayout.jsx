@@ -1,5 +1,6 @@
 import { Outlet, NavLink } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
+import { getUserFirstName } from "@/lib/userDisplay";
 import {
   Activity,
   CalendarDays,
@@ -21,9 +22,17 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: SettingsIcon, end: false },
 ];
 
+const mobileNavItems = [
+  { to: "/", label: "Today", icon: LayoutDashboard, end: true },
+  { to: "/workouts", label: "Workouts", icon: Dumbbell, end: false },
+  { to: "/progress", label: "Progress", icon: TrendingUp, end: false },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays, end: false },
+  { to: "/settings", label: "More", icon: SettingsIcon, end: false },
+];
+
 export default function AppLayout() {
   const { user, logout } = useAuth();
-  const firstName = user?.full_name?.split(" ")[0] || "User";
+  const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
 
   return (
@@ -102,26 +111,26 @@ export default function AppLayout() {
       </header>
 
       <main className="lg:ml-72 min-h-screen">
-        <div className="w-full max-w-[1540px] mx-auto px-4 sm:px-6 lg:px-8 2xl:px-10 py-6 sm:py-8 pb-28 lg:pb-12">
+        <div className="w-full max-w-[1540px] mx-auto px-4 sm:px-6 lg:px-8 2xl:px-10 py-6 sm:py-8 pb-[calc(5.75rem+env(safe-area-inset-bottom))] lg:pb-12">
           <Outlet />
         </div>
       </main>
 
-      <nav className="lg:hidden fixed bottom-3 left-3 right-3 bg-white/78 backdrop-blur-2xl border border-white/60 rounded-[1.7rem] shadow-[0_18px_55px_-34px_rgba(29,29,31,0.6)] z-40">
-        <div className="flex items-center justify-start gap-1 overflow-x-auto h-16 px-2 pb-[env(safe-area-inset-bottom)]">
-          {navItems.map((item) => (
+      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200/70 bg-white/82 backdrop-blur-2xl shadow-[0_-12px_34px_-30px_rgba(29,29,31,0.75)]">
+        <div className="grid grid-cols-5 h-[calc(3.9rem+env(safe-area-inset-bottom))] px-2 pt-1 pb-[env(safe-area-inset-bottom)]">
+          {mobileNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `min-w-[64px] flex flex-col items-center gap-1 px-2 py-1.5 rounded-2xl transition-colors ${
-                  isActive ? "text-white bg-neutral-900" : "text-neutral-400"
+                `flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-medium transition-colors ${
+                  isActive ? "text-blue-600" : "text-neutral-400 hover:text-neutral-700"
                 }`
               }
             >
-              <item.icon className="w-[18px] h-[18px]" strokeWidth={2} />
-              <span className="text-[10px] font-medium">{item.label}</span>
+              <item.icon className="h-[23px] w-[23px]" strokeWidth={2.1} />
+              <span className="truncate leading-tight">{item.label}</span>
             </NavLink>
           ))}
         </div>

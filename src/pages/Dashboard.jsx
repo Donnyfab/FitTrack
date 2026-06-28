@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
+import { getUserFirstName } from "@/lib/userDisplay";
 import {
   calculateStreak,
   calculateWorkoutVolume,
@@ -38,12 +39,37 @@ function startOfWeek(date) {
   return next;
 }
 
+function getPeriodRange(period, today) {
+  const start = new Date(today);
+  const end = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+
+  if (period === "last-week") {
+    start.setDate(start.getDate() - start.getDay() - 7);
+    end.setDate(start.getDate() + 6);
+  } else if (period === "this-month") {
+    start.setDate(1);
+  } else {
+    start.setDate(start.getDate() - start.getDay());
+  }
+
+  return { start, end };
+}
+
+const periodLabels = {
+  "this-week": "this week",
+  "last-week": "last week",
+  "this-month": "this month",
+};
+
 export default function Dashboard() {
   const { user, settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [goals, setGoals] = useState([]);
   const [bodyStats, setBodyStats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState("this-week");
 
   useEffect(() => {
     loadData();
@@ -83,20 +109,25 @@ export default function Dashboard() {
   const today = new Date();
   const todayKey = today.toISOString().split("T")[0];
   const weekStart = startOfWeek(today);
+  const { start: periodStart, end: periodEnd } = getPeriodRange(period, today);
+  const periodWorkouts = workouts.filter((workout) => {
+    const date = new Date(`${workout.date}T00:00:00`);
+    return date >= periodStart && date <= periodEnd;
+  });
   const weeklyWorkouts = workouts.filter((workout) => {
     const date = new Date(`${workout.date}T00:00:00`);
     return date >= weekStart && date <= today;
   });
-  const weeklyVolume = weeklyWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
-  const caloriesBurned = weeklyWorkouts.reduce((sum, workout) => sum + (Number(workout.calories) || 0), 0);
+  const periodVolume = periodWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
+  const caloriesBurned = periodWorkouts.reduce((sum, workout) => sum + (Number(workout.calories) || 0), 0);
   const streak = calculateStreak(workouts);
   const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
   const goalProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
   const todayWorkout = workouts.find((workout) => workout.date === todayKey);
-  const recentWorkouts = workouts.slice(0, 4);
+  const recentWorkouts = periodWorkouts.slice(0, 4);
   const latestBodyStat = bodyStats[0];
-  const firstName =
-    user?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "there";
+  const firstName = getUserFirstName(user, "there");
+  const periodLabel = periodLabels[period];
 
   return (
     <div className="animate-fade-in space-y-8">
@@ -109,16 +140,21 @@ export default function Dashboard() {
             {formatDateLong(todayKey)} · Welcome back to FitTrack
           </p>
         </div>
-        <select className="h-10 w-full sm:w-40 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 focus:outline-none focus:border-neutral-400">
-          <option>This Week</option>
-          <option>Last Week</option>
-          <option>This Month</option>
+        <select
+          value={period}
+          onChange={(event) => setPeriod(event.target.value)}
+          className="h-10 w-full sm:w-40 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 focus:outline-none focus:border-neutral-400"
+          aria-label="Dashboard time period"
+        >
+          <option value="this-week">This Week</option>
+          <option value="last-week">Last Week</option>
+          <option value="this-month">This Month</option>
         </select>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
-        <StatCard icon={Dumbbell} label="Workouts this week" value={`${weeklyWorkouts.length} / ${weeklyGoal}`} sublabel="Logged sessions" />
-        <StatCard icon={TrendingUp} label="Total volume" value={`${Math.round(weeklyVolume).toLocaleString()}`} sublabel="lbs this week" />
+        <StatCard icon={Dumbbell} label={period === "this-week" ? "Workouts this week" : "Workouts"} value={`${periodWorkouts.length}${period === "this-week" ? ` / ${weeklyGoal}` : ""}`} sublabel="Logged sessions" />
+        <StatCard icon={TrendingUp} label="Total volume" value={`${Math.round(periodVolume).toLocaleString()}`} sublabel={`lbs ${periodLabel}`} />
         <StatCard icon={Flame} label="Current streak" value={`${streak} day${streak !== 1 ? "s" : ""}`} sublabel={streak > 0 ? "Keep it steady" : "Start today"} />
         <StatCard icon={Activity} label="Calories burned" value={caloriesBurned ? caloriesBurned.toLocaleString() : "—"} sublabel={caloriesBurned ? "Estimated" : "Not tracked yet"} />
       </div>

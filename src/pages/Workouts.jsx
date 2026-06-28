@@ -54,6 +54,12 @@ export default function Workouts() {
     return matchesTab && matchesQuery && matchesMuscle;
   });
 
+  const emptyTitle = workouts.length === 0 ? "No workouts logged yet" : "No workouts match this view";
+  const emptyDescription =
+    workouts.length === 0
+      ? "Create your first workout to start tracking sets, volume, and progress."
+      : "Clear the search, switch tabs, or choose a different muscle group.";
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-3">
@@ -138,8 +144,8 @@ export default function Workouts() {
         <div className="bg-white rounded-2xl border border-neutral-200">
           <EmptyState
             icon={Dumbbell}
-            title="No workouts found"
-            description="Try another search, filter, or tab."
+            title={emptyTitle}
+            description={emptyDescription}
             action={
               <Link to="/workouts/new" className="inline-flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors">
                 <Plus className="w-4 h-4" /> New Workout

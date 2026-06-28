@@ -13,7 +13,6 @@ function mapUser(user) {
     full_name:
       user.user_metadata?.full_name ||
       user.user_metadata?.name ||
-      user.email?.split('@')[0] ||
       '',
   };
 }
@@ -37,7 +36,7 @@ async function ensureSavedUserData(authUser) {
       .insert({
         id: authUser.id,
         email: authUser.email,
-        full_name: fallbackUser.full_name,
+        full_name: fallbackUser.full_name || null,
       })
       .select('*')
       .single();

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { applyThemePreference, getStoredThemePreference, normalizeThemePreference } from "@/lib/theme";
+import { getUserFirstName } from "@/lib/userDisplay";
 import { toast } from "@/hooks/use-toast";
 import {
   Bell,
@@ -37,7 +38,7 @@ function ToggleRow({ label, description, checked, onChange }) {
 
 export default function Settings() {
   const { user, settings, logout, updateUserProfile } = useAuth();
-  const firstName = user?.full_name?.split(" ")[0] || "User";
+  const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
   const [activeTab, setActiveTab] = useState("Profile");
   const [fullName, setFullName] = useState(user?.full_name || "");
@@ -232,18 +233,22 @@ export default function Settings() {
                 <p className={labelClass} id="theme-label">Theme</p>
                 <div className="grid grid-cols-3 gap-2 rounded-lg bg-neutral-100 p-1" role="radiogroup" aria-labelledby="theme-label">
                   {["system", "light", "dark"].map((option) => (
-                    <button
+                    <label
                       key={option}
-                      type="button"
-                      role="radio"
-                      aria-checked={theme === option}
-                      onClick={() => handleThemeChange(option)}
-                      className={`h-9 rounded-md text-sm font-medium capitalize transition-colors ${
+                      className={`flex h-9 cursor-pointer items-center justify-center rounded-md text-sm font-medium capitalize transition-colors ${
                         theme === option ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"
                       }`}
                     >
+                      <input
+                        type="radio"
+                        name="theme"
+                        value={option}
+                        checked={theme === option}
+                        onChange={() => handleThemeChange(option)}
+                        className="sr-only"
+                      />
                       {option}
-                    </button>
+                    </label>
                   ))}
                 </div>
               </div>

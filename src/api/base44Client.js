@@ -80,7 +80,7 @@ function toDbGoal(data) {
   if ('target' in data) row.target = data.target || null;
   if ('deadline' in data) row.deadline = data.deadline || null;
   if ('status' in data) row.status = data.status || 'active';
-  if ('progress' in data) row.progress = Number(data.progress) || 0;
+  if ('progress' in data) row.progress = Math.min(100, Math.max(0, Number(data.progress) || 0));
   if ('notes' in data) row.notes = data.notes || null;
   return row;
 }
@@ -264,7 +264,6 @@ const auth = {
         profile?.full_name ||
         user.user_metadata?.full_name ||
         user.user_metadata?.name ||
-        user.email?.split('@')[0] ||
         '',
       avatar_url: profile?.avatar_url || null,
     };

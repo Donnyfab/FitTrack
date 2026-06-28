@@ -3,19 +3,23 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { calculateWorkoutVolume, formatDateLong } from "@/lib/workoutUtils";
-import { countSets } from "@/lib/fittrackDemoData";
+import { countSets, exerciseCatalog } from "@/lib/fittrackDemoData";
 import {
   ArrowLeft,
   Check,
   Clock,
+  Copy,
   Dumbbell,
   MoreHorizontal,
   Pause,
   Pencil,
   Plus,
+  RotateCcw,
+  Search,
   Star,
   TimerReset,
   Trash2,
+  X,
 } from "lucide-react";
 
 const formatTimer = (seconds) => {
@@ -36,6 +40,11 @@ export default function WorkoutDetail() {
   const [restSeconds, setRestSeconds] = useState(defaultRestSeconds);
   const [restPaused, setRestPaused] = useState(false);
   const [favoriteExercises, setFavoriteExercises] = useState([]);
+  const [availableExercises, setAvailableExercises] = useState(exerciseCatalog);
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [exerciseQuery, setExerciseQuery] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [saveState, setSaveState] = useState("saved");
 
   useEffect(() => {
     loadWorkout();
@@ -62,11 +71,15 @@ export default function WorkoutDetail() {
     try {
       const [data, savedExercises] = await Promise.all([
         base44.entities.Workout.get(id),
-        base44.entities.UserExercise.filter({ isFavorite: true }, "name", 500),
+        base44.entities.UserExercise.list("name", 500),
       ]);
+      const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
+      const mergedCatalog = exerciseCatalog.map((exercise) => ({ ...exercise, ...(savedByName.get(exercise.name) || {}) }));
+      const customExercises = savedExercises.filter((exercise) => !exerciseCatalog.some((item) => item.name === exercise.name));
       setWorkout(data);
       setLoggedExercises(data.exercises || []);
-      setFavoriteExercises(savedExercises.map((exercise) => exercise.name));
+      setAvailableExercises([...customExercises, ...mergedCatalog]);
+      setFavoriteExercises(savedExercises.filter((exercise) => exercise.favorite).map((exercise) => exercise.name));
     } catch {
       setWorkout(null);
       setLoggedExercises([]);
@@ -84,10 +97,14 @@ export default function WorkoutDetail() {
   const saveExercises = async (nextExercises, extra = {}) => {
     if (settings?.auto_save_workouts === false && !extra.forceSave) return;
     const { forceSave, ...payload } = extra;
+    setSaveState("saving");
     try {
-      await base44.entities.Workout.update(id, { exercises: nextExercises, ...payload });
+      const savedWorkout = await base44.entities.Workout.update(id, { exercises: nextExercises, ...payload });
+      setWorkout(savedWorkout);
+      setSaveState("saved");
     } catch (error) {
       console.error("Workout save failed:", error);
+      setSaveState("error");
     }
   };
 
@@ -109,20 +126,82 @@ export default function WorkoutDetail() {
   const addSet = (exerciseIndex) => {
     const nextExercises = loggedExercises.map((exercise, currentExerciseIndex) =>
         currentExerciseIndex === exerciseIndex
-          ? { ...exercise, sets: [...(exercise.sets || []), { weight: 0, reps: 0, completed: false }] }
+          ? {
+              ...exercise,
+              sets: [
+                ...(exercise.sets || []),
+                {
+                  weight: exercise.sets?.at(-1)?.weight ?? "",
+                  reps: exercise.sets?.at(-1)?.reps ?? "",
+                  completed: false,
+                },
+              ],
+            }
           : exercise
     );
     setLoggedExercises(nextExercises);
     saveExercises(nextExercises);
   };
 
-  const addExercise = () => {
+  const updateSetValue = (exerciseIndex, setIndex, field, value) => {
+    const nextExercises = loggedExercises.map((exercise, currentExerciseIndex) =>
+      currentExerciseIndex === exerciseIndex
+        ? {
+            ...exercise,
+            sets: (exercise.sets || []).map((set, currentSetIndex) =>
+              currentSetIndex === setIndex ? { ...set, [field]: value } : set
+            ),
+          }
+        : exercise
+    );
+    setLoggedExercises(nextExercises);
+    saveExercises(nextExercises);
+  };
+
+  const removeSet = (exerciseIndex, setIndex) => {
+    const nextExercises = loggedExercises.map((exercise, currentExerciseIndex) =>
+      currentExerciseIndex === exerciseIndex
+        ? {
+            ...exercise,
+            sets: (exercise.sets || []).filter((_, currentSetIndex) => currentSetIndex !== setIndex),
+          }
+        : exercise
+    );
+    setLoggedExercises(nextExercises);
+    saveExercises(nextExercises);
+  };
+
+  const addExerciseToWorkout = (exercise) => {
+    if (!exercise?.name || loggedExercises.some((item) => item.name === exercise.name)) {
+      setShowExercisePicker(false);
+      return;
+    }
     const nextExercises = [
       ...loggedExercises,
-      { name: "New Exercise", sets: [{ weight: 0, reps: 0, completed: false }] },
+      { name: exercise.name, sets: [{ weight: "", reps: "", completed: false }] },
     ];
     setLoggedExercises(nextExercises);
     saveExercises(nextExercises);
+    setExerciseQuery("");
+    setShowExercisePicker(false);
+  };
+
+  const duplicateAsTemplate = async () => {
+    const source = displayWorkout || workout;
+    if (!source) return;
+    await base44.entities.Workout.create({
+      name: `${source.name} Template`,
+      date: new Date().toISOString().split("T")[0],
+      muscleGroup: source.muscleGroup,
+      notes: source.notes,
+      exercises: loggedExercises,
+      status: "planned",
+      calories: source.calories,
+      favorite: false,
+      template: true,
+    });
+    setMoreOpen(false);
+    navigate("/workouts");
   };
 
   const finishWorkout = async () => {
@@ -204,6 +283,9 @@ export default function WorkoutDetail() {
   const nextExercise = loggedExercises.find((exercise) =>
     (exercise.sets || []).some((set) => !set.completed)
   );
+  const pickerResults = availableExercises.filter((exercise) =>
+    `${exercise.name} ${exercise.muscleGroup}`.toLowerCase().includes(exerciseQuery.toLowerCase())
+  );
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -224,13 +306,28 @@ export default function WorkoutDetail() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="relative flex items-center gap-2 shrink-0">
           <Link to={`/workouts/${id}/edit`} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
             <Pencil className="w-3.5 h-3.5" /> Edit
           </Link>
-          <button className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
+          <button
+            onClick={() => setMoreOpen((value) => !value)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
+            aria-expanded={moreOpen}
+            aria-haspopup="menu"
+          >
             <MoreHorizontal className="w-4 h-4" /> More
           </button>
+          {moreOpen && (
+            <div className="absolute right-0 top-11 z-20 w-56 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl" role="menu">
+              <button onClick={duplicateAsTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
+                <Copy className="h-4 w-4 text-neutral-400" /> Save as template
+              </button>
+              <button onClick={() => { setRestSeconds(defaultRestSeconds); setMoreOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
+                <RotateCcw className="h-4 w-4 text-neutral-400" /> Reset rest timer
+              </button>
+            </div>
+          )}
           <button onClick={handleDelete} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
@@ -279,9 +376,12 @@ export default function WorkoutDetail() {
           <div>
             <p className="text-sm font-medium text-neutral-900">Next exercise/rest suggestion</p>
             <p className="text-sm text-neutral-500 mt-1">
-              {nextExercise ? `Next: ${nextExercise.name}. Rest 90 seconds, then match last set quality.` : "All planned sets are checked off."}
+              {nextExercise ? `Next: ${nextExercise.name}. Rest ${defaultRestSeconds} seconds, then match last set quality.` : "All planned sets are checked off."}
             </p>
           </div>
+          <p className={`text-xs ${saveState === "error" ? "text-red-500" : "text-neutral-400"}`}>
+            {saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : settings?.auto_save_workouts === false ? "Saved on finish" : "Saved"}
+          </p>
           <button onClick={finishWorkout} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
             <Check className="w-4 h-4" />
             Finish Workout
@@ -297,7 +397,7 @@ export default function WorkoutDetail() {
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-neutral-900 truncate">{exercise.name}</p>
                 </div>
-                <p className="text-xs text-neutral-500 mt-1">Previous performance appears after this exercise has history.</p>
+                <p className="text-xs text-neutral-500 mt-1">Last time appears after this exercise has saved history.</p>
               </div>
               <button
                 onClick={() => toggleFavorite(exercise.name)}
@@ -315,14 +415,34 @@ export default function WorkoutDetail() {
                     <th className="px-4 py-2">Weight</th>
                     <th className="px-4 py-2">Reps</th>
                     <th className="px-4 py-2 text-right">Done</th>
+                    <th className="px-4 py-2 w-12"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-50">
                   {(exercise.sets || []).map((set, setIndex) => (
                     <tr key={setIndex}>
                       <td className="px-4 py-3 text-neutral-500">Set {setIndex + 1}</td>
-                      <td className="px-4 py-3 font-medium text-neutral-900">{Number(set.weight) || 0} lb</td>
-                      <td className="px-4 py-3 font-medium text-neutral-900">{Number(set.reps) || 0}</td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={set.weight ?? ""}
+                          onChange={(event) => updateSetValue(exerciseIndex, setIndex, "weight", event.target.value)}
+                          className="h-9 w-24 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400"
+                          aria-label={`${exercise.name} set ${setIndex + 1} weight`}
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          value={set.reps ?? ""}
+                          onChange={(event) => updateSetValue(exerciseIndex, setIndex, "reps", event.target.value)}
+                          className="h-9 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400"
+                          aria-label={`${exercise.name} set ${setIndex + 1} reps`}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <input
                           type="checkbox"
@@ -331,6 +451,16 @@ export default function WorkoutDetail() {
                           className="h-4 w-4 rounded border-neutral-300 accent-neutral-900"
                           aria-label={`Complete ${exercise.name} set ${setIndex + 1}`}
                         />
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          onClick={() => removeSet(exerciseIndex, setIndex)}
+                          disabled={(exercise.sets || []).length <= 1}
+                          className="rounded-lg p-1.5 text-neutral-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40"
+                          aria-label={`Remove ${exercise.name} set ${setIndex + 1}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -351,12 +481,51 @@ export default function WorkoutDetail() {
       </div>
 
       <button
-        onClick={addExercise}
+        onClick={() => setShowExercisePicker((value) => !value)}
         className="w-full rounded-xl border border-dashed border-neutral-300 py-3 text-sm font-medium text-neutral-500 hover:border-neutral-400 hover:text-neutral-900 transition-colors"
       >
         <Plus className="w-4 h-4 inline mr-2" />
         Add Exercise
       </button>
+
+      {showExercisePicker && (
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-900">Choose exercise</p>
+              <p className="text-xs text-neutral-500 mt-1">Add a saved or common movement to this workout.</p>
+            </div>
+            <button onClick={() => setShowExercisePicker(false)} className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-50 hover:text-neutral-900" aria-label="Close exercise picker">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="relative mt-4">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <input
+              value={exerciseQuery}
+              onChange={(event) => setExerciseQuery(event.target.value)}
+              placeholder="Search exercises"
+              className="h-10 w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 text-sm focus:outline-none focus:border-neutral-400"
+            />
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pickerResults.slice(0, 12).map((exercise) => (
+              <button
+                key={exercise.name}
+                onClick={() => addExerciseToWorkout(exercise)}
+                disabled={loggedExercises.some((item) => item.name === exercise.name)}
+                className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-3 py-2 text-left text-sm hover:bg-neutral-50 disabled:opacity-45"
+              >
+                <span>
+                  <span className="block font-medium text-neutral-900">{exercise.name}</span>
+                  <span className="block text-xs text-neutral-500">{exercise.muscleGroup}</span>
+                </span>
+                <Plus className="h-4 w-4 text-neutral-400" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {displayWorkout.notes && (
         <div className="bg-white rounded-xl border border-neutral-200 p-4">

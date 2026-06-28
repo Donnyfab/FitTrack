@@ -35,6 +35,8 @@ const typeLabel = (type) => {
   return labels[type] || getGoalTypeLabel(type);
 };
 
+const clampProgress = (value) => Math.min(100, Math.max(0, Number(value) || 0));
+
 export default function Goals() {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function Goals() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSaving(true);
-    const data = { ...form, progress: Number(form.progress) || 0 };
+    const data = { ...form, progress: clampProgress(form.progress) };
     try {
       if (editingId) await base44.entities.Goal.update(editingId, data);
       else await base44.entities.Goal.create(data);
@@ -145,41 +147,49 @@ export default function Goals() {
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className={labelClass}>Goal Title</label>
-                <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="e.g. Train 5 days per week" required className={inputClass} />
+                <label className={labelClass} htmlFor="goalTitle">Goal Title</label>
+                <input id="goalTitle" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="e.g. Train 5 days per week" required className={inputClass} />
               </div>
               <div>
-                <label className={labelClass}>Type</label>
-                <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className={inputClass}>
+                <label className={labelClass} htmlFor="goalType">Type</label>
+                <select id="goalType" value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className={inputClass}>
                   {GOAL_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Target Progress</label>
-                <input value={form.target} onChange={(event) => setForm({ ...form, target: event.target.value })} placeholder="e.g. Complete 5 workouts weekly" className={inputClass} />
+                <label className={labelClass} htmlFor="goalTarget">Target Progress</label>
+                <input id="goalTarget" value={form.target} onChange={(event) => setForm({ ...form, target: event.target.value })} placeholder="e.g. Complete 5 workouts weekly" className={inputClass} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>End Date</label>
-                  <input type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} className={inputClass} />
+                  <label className={labelClass} htmlFor="goalDeadline">End Date</label>
+                  <input id="goalDeadline" type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} className={inputClass} />
                 </div>
                 <div>
-                  <label className={labelClass}>Progress</label>
+                  <label className={labelClass} htmlFor="goalProgress">Progress</label>
                   <div className="flex items-center gap-2 h-11">
-                    <input type="range" min="0" max="100" value={form.progress} onChange={(event) => setForm({ ...form, progress: Number(event.target.value) })} className="flex-1 accent-neutral-900" />
-                    <span className="text-sm font-medium text-neutral-900 w-10 text-right">{form.progress}%</span>
+                    <input id="goalProgress" type="range" min="0" max="100" value={form.progress} onChange={(event) => setForm({ ...form, progress: clampProgress(event.target.value) })} className="flex-1 accent-neutral-900" />
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={form.progress}
+                      onChange={(event) => setForm({ ...form, progress: clampProgress(event.target.value) })}
+                      className="h-9 w-16 rounded-lg border border-neutral-200 px-2 text-right text-sm font-medium text-neutral-900 focus:outline-none focus:border-neutral-400"
+                      aria-label="Goal progress percentage"
+                    />
                   </div>
                 </div>
               </div>
               <div>
-                <label className={labelClass}>Status</label>
-                <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className={inputClass}>
+                <label className={labelClass} htmlFor="goalStatus">Status</label>
+                <select id="goalStatus" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className={inputClass}>
                   {GOAL_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Goal Description</label>
-                <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={2} placeholder="Why this goal matters..." className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-sm resize-none focus:outline-none focus:border-neutral-400 transition-colors" />
+                <label className={labelClass} htmlFor="goalNotes">Goal Description</label>
+                <textarea id="goalNotes" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={2} placeholder="Why this goal matters..." className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-sm resize-none focus:outline-none focus:border-neutral-400 transition-colors" />
               </div>
               <div className="flex items-center gap-3 pt-2">
                 <button type="submit" disabled={saving || !form.title} className="flex-1 h-11 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50">

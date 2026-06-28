@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MUSCLE_GROUPS } from "@/lib/constants";
+import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import { ArrowLeft, X, Trash2 } from "lucide-react";
 
 const emptyExercise = () => ({ name: "", sets: [{ reps: "", weight: "", completed: false }] });
@@ -24,7 +25,18 @@ export default function WorkoutForm() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (isEdit) loadWorkout(); }, [id]);
+  useEffect(() => {
+    if (isEdit) {
+      loadWorkout();
+      return;
+    }
+    const selectedExercises = readSelectedWorkoutExercises();
+    if (selectedExercises.length > 0) {
+      setExercises(selectedExercises.map((exerciseName) => ({ name: exerciseName, sets: [{ reps: "", weight: "", completed: false }] })));
+      setName("New Workout");
+      clearSelectedWorkoutExercises();
+    }
+  }, [id]);
 
   const loadWorkout = async () => {
     try {
@@ -64,6 +76,7 @@ export default function WorkoutForm() {
     try {
       if (isEdit) await base44.entities.Workout.update(id, data);
       else await base44.entities.Workout.create(data);
+      clearSelectedWorkoutExercises();
       navigate(isEdit ? `/workouts/${id}` : "/workouts");
     } finally { setSaving(false); }
   };

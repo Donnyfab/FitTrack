@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import {
   Activity,
   Dumbbell,
@@ -20,6 +22,7 @@ const iconForGroup = (group) => {
 };
 
 export default function Exercises() {
+  const navigate = useNavigate();
   const [exercises, setExercises] = useState(exerciseCatalog);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
@@ -109,10 +112,26 @@ export default function Exercises() {
     setShowCreate(false);
   };
 
-  const selectForWorkout = (exercise) => {
-    setSelectedForWorkout((items) =>
-      items.includes(exercise.name) ? items : [...items, exercise.name]
-    );
+  const selectForWorkout = async (exercise) => {
+    if (!exercise?.name) return;
+    const nextItems = selectedForWorkout.includes(exercise.name)
+      ? selectedForWorkout
+      : [...selectedForWorkout, exercise.name];
+    setSelectedForWorkout(nextItems);
+    writeSelectedWorkoutExercises(nextItems);
+    try {
+      await base44.entities.UserExercise.upsert(
+        { ...exercise, custom: Boolean(exercise.custom), favorite: Boolean(exercise.favorite) },
+        { onConflict: "user_id,name" }
+      );
+    } catch {
+      // Selection still works through session storage; persistence will retry on favorite/custom edits.
+    }
+  };
+
+  const startWorkoutFromSelection = () => {
+    writeSelectedWorkoutExercises(selectedForWorkout);
+    navigate("/workouts/new");
   };
 
   return (
@@ -267,13 +286,27 @@ export default function Exercises() {
 
           {selectedForWorkout.length > 0 && (
             <div className="mt-5 border-t border-neutral-100 pt-4">
-              <p className="text-sm font-medium text-neutral-900">Selected exercises</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-neutral-900">Selected exercises</p>
+                <button
+                  onClick={startWorkoutFromSelection}
+                  className="text-xs font-semibold text-neutral-900 hover:text-neutral-600"
+                >
+                  Build workout
+                </button>
+              </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {selectedForWorkout.map((name) => (
                   <span key={name} className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
                     {name}
                     <button
-                      onClick={() => setSelectedForWorkout((items) => items.filter((item) => item !== name))}
+                      onClick={() =>
+                        setSelectedForWorkout((items) => {
+                          const nextItems = items.filter((item) => item !== name);
+                          writeSelectedWorkoutExercises(nextItems);
+                          return nextItems;
+                        })
+                      }
                       aria-label={`Remove ${name}`}
                     >
                       <X className="w-3 h-3" />

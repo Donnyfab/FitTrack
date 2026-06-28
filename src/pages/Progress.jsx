@@ -47,6 +47,7 @@ export default function Progress() {
   const [bodyStats, setBodyStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Overview");
+  const [range, setRange] = useState("this-month");
   const [bodyStatForm, setBodyStatForm] = useState({
     recordedAt: new Date().toISOString().split("T")[0],
     weight: "",
@@ -95,15 +96,40 @@ export default function Progress() {
     );
   }
 
-  const totalVolume = workouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
-  const totalSets = workouts.reduce((sum, workout) => sum + countSets(workout), 0);
+  const today = new Date();
+  const rangeStart = new Date(today);
+  rangeStart.setHours(0, 0, 0, 0);
+  let filteredWorkouts;
+  let filteredBodyStats;
+  if (range === "last-month") {
+    rangeStart.setMonth(rangeStart.getMonth() - 1, 1);
+    const rangeEnd = new Date(rangeStart);
+    rangeEnd.setMonth(rangeEnd.getMonth() + 1, 0);
+    rangeEnd.setHours(23, 59, 59, 999);
+    filteredWorkouts = workouts.filter((workout) => {
+      const date = new Date(`${workout.date}T00:00:00`);
+      return date >= rangeStart && date <= rangeEnd;
+    });
+    filteredBodyStats = bodyStats.filter((stat) => {
+      const date = new Date(`${stat.recordedAt}T00:00:00`);
+      return date >= rangeStart && date <= rangeEnd;
+    });
+  } else {
+    if (range === "last-90-days") rangeStart.setDate(rangeStart.getDate() - 89);
+    else rangeStart.setDate(1);
+    filteredWorkouts = workouts.filter((workout) => new Date(`${workout.date}T00:00:00`) >= rangeStart);
+    filteredBodyStats = bodyStats.filter((stat) => new Date(`${stat.recordedAt}T00:00:00`) >= rangeStart);
+  }
+
+  const totalVolume = filteredWorkouts.reduce((sum, workout) => sum + calculateWorkoutVolume(workout), 0);
+  const totalSets = filteredWorkouts.reduce((sum, workout) => sum + countSets(workout), 0);
   const streak = calculateStreak(workouts);
-  const prList = Object.entries(getPersonalRecords(workouts))
+  const prList = Object.entries(getPersonalRecords(filteredWorkouts))
     .sort(([, a], [, b]) => b.weight - a.weight)
     .slice(0, 8);
-  const weeklyVolume = getWeeklyVolume(workouts).slice(-12);
+  const weeklyVolume = getWeeklyVolume(filteredWorkouts).slice(-12);
   const muscleBreakdown = Object.entries(
-    workouts.reduce((map, workout) => {
+    filteredWorkouts.reduce((map, workout) => {
       const group = workout.muscleGroup?.split(",")[0] || "Other";
       map[group] = (map[group] || 0) + calculateWorkoutVolume(workout);
       return map;
@@ -116,7 +142,7 @@ export default function Progress() {
   const hasVolumeData = weeklyVolume.some((item) => Number(item.volume) > 0);
   const hasMuscleData = muscleBreakdown.length > 0;
   const hasStrengthData = strengthData.length > 0;
-  const bodyStatsChartData = [...bodyStats].reverse().map((stat) => ({
+  const bodyStatsChartData = [...filteredBodyStats].reverse().map((stat) => ({
     recordedAt: stat.recordedAt,
     weight: stat.weight,
     bodyFat: stat.bodyFatPercentage,
@@ -129,17 +155,22 @@ export default function Progress() {
           <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">Progress</h1>
           <p className="text-sm text-neutral-500 mt-1">Track volume, strength, body stats, and personal records.</p>
         </div>
-        <select className="h-10 w-full sm:w-40 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 focus:outline-none focus:border-neutral-400">
-          <option>This Month</option>
-          <option>Last Month</option>
-          <option>Last 90 Days</option>
+        <select
+          value={range}
+          onChange={(event) => setRange(event.target.value)}
+          className="h-10 w-full sm:w-40 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 focus:outline-none focus:border-neutral-400"
+          aria-label="Progress time range"
+        >
+          <option value="this-month">This Month</option>
+          <option value="last-month">Last Month</option>
+          <option value="last-90-days">Last 90 Days</option>
         </select>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
-        {[
+          {[
           { label: "Total Volume", icon: TrendingUp, value: Math.round(totalVolume).toLocaleString(), sub: "lbs lifted" },
-          { label: "Total Workouts", icon: Activity, value: workouts.length, sub: "sessions" },
+          { label: "Total Workouts", icon: Activity, value: filteredWorkouts.length, sub: "sessions" },
           { label: "Total Sets", icon: Dumbbell, value: totalSets.toLocaleString(), sub: "completed" },
           { label: "Streak", icon: Flame, value: `${streak}d`, sub: "current run" },
         ].map(({ label, icon: Icon, value, sub }) => (
@@ -288,32 +319,41 @@ export default function Progress() {
             <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
           </div>
           <form onSubmit={saveBodyStat} className="grid gap-3 md:grid-cols-[160px_1fr_1fr_auto]">
-            <input
-              type="date"
-              value={bodyStatForm.recordedAt}
-              onChange={(event) => setBodyStatForm({ ...bodyStatForm, recordedAt: event.target.value })}
-              className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
-              required
-            />
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={bodyStatForm.weight}
-              onChange={(event) => setBodyStatForm({ ...bodyStatForm, weight: event.target.value })}
-              placeholder="Weight"
-              className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
-            />
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="0.1"
-              value={bodyStatForm.bodyFatPercentage}
-              onChange={(event) => setBodyStatForm({ ...bodyStatForm, bodyFatPercentage: event.target.value })}
-              placeholder="Body fat %"
-              className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
-            />
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-neutral-500">Date</span>
+              <input
+                type="date"
+                value={bodyStatForm.recordedAt}
+                onChange={(event) => setBodyStatForm({ ...bodyStatForm, recordedAt: event.target.value })}
+                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+                required
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-neutral-500">Weight</span>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={bodyStatForm.weight}
+                onChange={(event) => setBodyStatForm({ ...bodyStatForm, weight: event.target.value })}
+                placeholder="Weight"
+                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-neutral-500">Body fat %</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={bodyStatForm.bodyFatPercentage}
+                onChange={(event) => setBodyStatForm({ ...bodyStatForm, bodyFatPercentage: event.target.value })}
+                placeholder="Body fat %"
+                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+              />
+            </label>
             <button type="submit" className="h-10 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
               Save
             </button>

@@ -14,6 +14,7 @@ function mapUser(user) {
       user.user_metadata?.full_name ||
       user.user_metadata?.name ||
       '',
+    avatar_url: user.user_metadata?.avatar_url || null,
   };
 }
 
@@ -198,6 +199,7 @@ export const AuthProvider = ({ children }) => {
     experienceLevel,
     primaryGoalType,
     workoutSplitPreference,
+    avatarUrl,
   }) => {
     if (!user?.id) {
       throw new Error('Authentication required');
@@ -235,6 +237,7 @@ export const AuthProvider = ({ children }) => {
             id: user.id,
             email: user.email,
             full_name: fullName || null,
+            avatar_url: avatarUrl || null,
           },
           { onConflict: 'id' }
         ),

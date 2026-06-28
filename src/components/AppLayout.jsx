@@ -44,6 +44,7 @@ export default function AppLayout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
+  const avatarUrl = user?.avatar_url;
 
   return (
     <div className="min-h-screen text-neutral-900">
@@ -84,8 +85,12 @@ export default function AppLayout() {
           <div className="p-3">
             <div className="rounded-[1.4rem] bg-white/70 p-3 mb-2 shadow-none">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-neutral-100 flex items-center justify-center text-sm font-semibold text-neutral-600">
-                  {initial}
+                <div className="w-10 h-10 overflow-hidden rounded-2xl bg-neutral-100 flex items-center justify-center text-sm font-semibold text-neutral-600">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    initial
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-neutral-900 truncate">{firstName}</p>
@@ -117,11 +122,15 @@ export default function AppLayout() {
           <button
             type="button"
             onClick={() => setProfileOpen((value) => !value)}
-            className="w-9 h-9 rounded-2xl bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500"
+            className="w-9 h-9 overflow-hidden rounded-2xl bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500"
             aria-haspopup="menu"
             aria-expanded={profileOpen}
           >
-            {initial}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+            ) : (
+              initial
+            )}
           </button>
           {profileOpen && (
             <div className="absolute right-5 top-14 z-50 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl" role="menu">

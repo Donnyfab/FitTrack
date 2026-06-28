@@ -7,11 +7,13 @@ import { getEarnedBadges } from "@/lib/trainingInsights";
 import { toast } from "@/hooks/use-toast";
 import {
   Bell,
+  Camera,
   Dumbbell,
   LogOut,
   Save,
   Shield,
   SlidersHorizontal,
+  Trash2,
   Trophy,
   User,
 } from "lucide-react";
@@ -24,6 +26,43 @@ const equipmentOptions = ["Barbell", "Dumbbells", "Machines", "Cables", "Bodywei
 
 function toggleListValue(values, value) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function resizeAvatarFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file?.type?.startsWith("image/")) {
+      reject(new Error("Please choose an image file."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        const size = 320;
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        const sourceSize = Math.min(image.width, image.height);
+        const sourceX = Math.max(0, (image.width - sourceSize) / 2);
+        const sourceY = Math.max(0, (image.height - sourceSize) / 2);
+
+        canvas.width = size;
+        canvas.height = size;
+        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.84);
+        if (dataUrl.length > 650000) {
+          reject(new Error("That photo is too large. Please choose a smaller image."));
+          return;
+        }
+        resolve(dataUrl);
+      };
+      image.onerror = () => reject(new Error("Could not read that image."));
+      image.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("Could not read that image."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function ToggleRow({ label, description, checked, onChange }) {
@@ -51,6 +90,7 @@ export default function Settings() {
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
   const [activeTab, setActiveTab] = useState("Profile");
   const [fullName, setFullName] = useState(user?.full_name || "");
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
   const [unitsSystem, setUnitsSystem] = useState(settings?.units_system || "imperial");
   const [weeklyWorkoutGoal, setWeeklyWorkoutGoal] = useState(settings?.weekly_workout_goal || 4);
   const [defaultRestTimer, setDefaultRestTimer] = useState(settings?.default_rest_timer_seconds || 90);
@@ -73,6 +113,7 @@ export default function Settings() {
 
   useEffect(() => {
     setFullName(user?.full_name || "");
+    setAvatarUrl(user?.avatar_url || "");
     setUnitsSystem(settings?.units_system || "imperial");
     setWeeklyWorkoutGoal(settings?.weekly_workout_goal || 4);
     setDefaultRestTimer(settings?.default_rest_timer_seconds || 90);
@@ -91,6 +132,7 @@ export default function Settings() {
     });
   }, [
     user?.full_name,
+    user?.avatar_url,
     settings?.units_system,
     settings?.weekly_workout_goal,
     settings?.default_rest_timer_seconds,
@@ -148,6 +190,7 @@ export default function Settings() {
     try {
       await updateUserProfile({
         fullName,
+        avatarUrl,
         unitsSystem,
         weeklyWorkoutGoal,
         themePreference: theme,
@@ -172,6 +215,24 @@ export default function Settings() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAvatarChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const resizedAvatar = await resizeAvatarFile(file);
+      setAvatarUrl(resizedAvatar);
+      toast({ title: "Photo ready", description: "Save settings to keep this profile picture." });
+    } catch (error) {
+      toast({
+        title: "Photo not added",
+        description: error.message || "Could not use that image.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -204,13 +265,45 @@ export default function Settings() {
         {activeTab === "Profile" && (
           <>
             <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center">
-                  <span className="text-lg font-semibold text-neutral-500">{initial}</span>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="h-16 w-16 overflow-hidden rounded-full bg-neutral-100 flex items-center justify-center ring-1 ring-neutral-200">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-xl font-semibold text-neutral-500">{initial}</span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-neutral-900">{user?.full_name || firstName}</p>
+                    <p className="text-sm text-neutral-500 truncate">{user?.email}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="font-medium text-neutral-900">{user?.full_name || firstName}</p>
-                  <p className="text-sm text-neutral-500 truncate">{user?.email}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    id="profilePhoto"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="sr-only"
+                  />
+                  <label
+                    htmlFor="profilePhoto"
+                    className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+                  >
+                    <Camera className="h-4 w-4" />
+                    {avatarUrl ? "Change photo" : "Add photo"}
+                  </label>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setAvatarUrl("")}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

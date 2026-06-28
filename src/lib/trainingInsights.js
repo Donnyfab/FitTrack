@@ -230,6 +230,7 @@ export function createWorkoutDraftFromTemplate(source, options = {}) {
       sets: (exercise.sets?.length ? exercise.sets : [{ weight: "", reps: "" }]).map((set) => ({
         weight: set.weight ?? "",
         reps: set.reps ?? "",
+        restSeconds: set.restSeconds ?? 90,
         completed: false,
       })),
     })),

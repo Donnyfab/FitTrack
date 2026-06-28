@@ -13,9 +13,11 @@ import {
   getWorkoutStatusLabel,
   writeWorkoutDraft,
 } from "@/lib/trainingInsights";
+import { DEFAULT_WORKOUT_TEMPLATES, createDraftFromDefaultTemplate } from "@/lib/workoutTemplates";
 import EmptyState from "@/components/EmptyState";
 import {
   ChevronRight,
+  Clock,
   Dumbbell,
   Filter,
   Play,
@@ -24,6 +26,7 @@ import {
   Search,
   Star,
   Trash2,
+  Wand2,
 } from "lucide-react";
 
 const tabs = ["All Workouts", "Favorites", "Templates"];
@@ -39,6 +42,7 @@ export default function Workouts() {
   const [muscleFilter, setMuscleFilter] = useState("All");
   const [swipedWorkoutId, setSwipedWorkoutId] = useState(null);
   const [swipeState, setSwipeState] = useState(null);
+  const [startingTemplateId, setStartingTemplateId] = useState(null);
 
   useEffect(() => {
     loadWorkouts();
@@ -54,9 +58,24 @@ export default function Workouts() {
   };
 
   const muscleGroups = useMemo(
-    () => ["All", ...new Set(workouts.map((workout) => workout.muscleGroup?.split(",")[0]).filter(Boolean))],
+    () => [
+      "All",
+      ...new Set([
+        ...workouts.map((workout) => workout.muscleGroup?.split(",")[0]).filter(Boolean),
+        ...DEFAULT_WORKOUT_TEMPLATES.flatMap((template) => template.muscleGroup.split(",").map((group) => group.trim())),
+      ]),
+    ],
     [workouts]
   );
+
+  const defaultTemplates = DEFAULT_WORKOUT_TEMPLATES.filter((template) => {
+    const matchesQuery = `${template.name} ${template.focus} ${template.level} ${template.muscleGroup}`
+      .toLowerCase()
+      .includes(query.toLowerCase());
+    const matchesMuscle =
+      muscleFilter === "All" || template.muscleGroup.toLowerCase().includes(muscleFilter.toLowerCase());
+    return matchesQuery && matchesMuscle;
+  });
 
   const filtered = workouts.filter((workout) => {
     const matchesTab =
@@ -92,6 +111,41 @@ export default function Workouts() {
 
   const createStarter = (day) => {
     openDraft(getStarterRoutine(settings?.workout_split_preference, day));
+  };
+
+  const customizeDefaultTemplate = (template, saveAsTemplate = false) => {
+    openDraft(createDraftFromDefaultTemplate(template, {
+      template: saveAsTemplate,
+      notes: saveAsTemplate
+        ? `${template.notes}\n\nSaved as your own template. Adjust exercises, sets, reps, rest times, and rest days before saving.`
+        : template.notes,
+    }));
+  };
+
+  const startDefaultTemplate = async (template) => {
+    if (startingTemplateId) return;
+    setStartingTemplateId(template.id);
+    try {
+      const draft = createDraftFromDefaultTemplate(template, { status: "planned", template: false });
+      const created = await base44.entities.Workout.create(draft);
+      navigate(`/workouts/${created.id}`);
+    } finally {
+      setStartingTemplateId(null);
+    }
+  };
+
+  const createCustomTemplate = () => {
+    openDraft({
+      name: "Custom Workout Template",
+      date: new Date().toISOString().split("T")[0],
+      muscleGroup: "",
+      notes: "Build this once, save it as a template, and reuse it later.",
+      status: "planned",
+      favorite: false,
+      template: true,
+      calories: "",
+      exercises: [],
+    });
   };
 
   const toggleFavorite = async (workout) => {
@@ -248,7 +302,105 @@ export default function Workouts() {
         </div>
       )}
 
-      {filtered.length === 0 ? (
+      {activeTab === "Templates" && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm shadow-neutral-950/[0.03]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Starter templates</p>
+                <h2 className="mt-1 text-lg font-semibold text-neutral-900">Pick a plan and start fast</h2>
+                <p className="mt-1 text-sm text-neutral-500">Each plan includes exercises, sets, reps, rest times, and a simple weekly structure.</p>
+              </div>
+              <button
+                type="button"
+                onClick={createCustomTemplate}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+              >
+                <Plus className="h-4 w-4" />
+                Custom template
+              </button>
+            </div>
+          </div>
+
+          {defaultTemplates.length > 0 && (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {defaultTemplates.map((template) => {
+                const setCount = countSets(template);
+                return (
+                  <article key={template.id} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm shadow-neutral-950/[0.03]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-neutral-900">{template.name}</h3>
+                          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">{template.level}</span>
+                        </div>
+                        <p className="mt-1 text-sm text-neutral-500">{template.focus}</p>
+                      </div>
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                        <Wand2 className="h-5 w-5" />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl bg-neutral-50 p-3">
+                        <p className="text-sm font-semibold text-neutral-900">{template.exercises.length}</p>
+                        <p className="text-xs text-neutral-500">Exercises</p>
+                      </div>
+                      <div className="rounded-xl bg-neutral-50 p-3">
+                        <p className="text-sm font-semibold text-neutral-900">{setCount}</p>
+                        <p className="text-xs text-neutral-500">Sets</p>
+                      </div>
+                      <div className="rounded-xl bg-neutral-50 p-3">
+                        <p className="text-sm font-semibold text-neutral-900">{template.duration}</p>
+                        <p className="text-xs text-neutral-500">Duration</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2 text-sm text-neutral-600">
+                      <p className="flex gap-2"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" /> {template.schedule}</p>
+                      <p className="text-xs text-neutral-500">Rest days: {template.restDays}</p>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startDefaultTemplate(template)}
+                        disabled={startingTemplateId === template.id}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-semibold text-white hover:bg-neutral-800"
+                      >
+                        <Play className="h-3.5 w-3.5 fill-current" />
+                        {startingTemplateId === template.id ? "Starting..." : "Start now"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => customizeDefaultTemplate(template)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                      >
+                        Customize
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => customizeDefaultTemplate(template, true)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                      >
+                        Save copy
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          {filtered.length > 0 && (
+            <div className="pt-2">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Your saved templates</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {filtered.length === 0 && (activeTab !== "Templates" || defaultTemplates.length === 0) ? (
         <div className="bg-white rounded-2xl border border-neutral-200">
           <EmptyState
             icon={Dumbbell}

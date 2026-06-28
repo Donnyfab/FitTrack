@@ -41,8 +41,9 @@ function normalizeExercise(exercise) {
     sets: exercise.sets?.length ? exercise.sets.map((set) => ({
       reps: set.reps?.toString() || "",
       weight: set.weight?.toString() || "",
+      restSeconds: set.restSeconds?.toString() || "90",
       completed: Boolean(set.completed),
-    })) : [{ reps: "", weight: "", completed: false }],
+    })) : [{ reps: "", weight: "", restSeconds: "90", completed: false }],
   };
 }
 
@@ -51,7 +52,7 @@ function mergeSelectedExercises(existingExercises, selectedExerciseNames) {
   const existingNames = new Set(current.map((exercise) => exercise.name).filter(Boolean));
   selectedExerciseNames.forEach((exerciseName) => {
     if (!existingNames.has(exerciseName)) {
-      current.push({ name: exerciseName, sets: [{ reps: "", weight: "", completed: false }] });
+      current.push({ name: exerciseName, sets: [{ reps: "", weight: "", restSeconds: "90", completed: false }] });
       existingNames.add(exerciseName);
     }
   });
@@ -101,7 +102,7 @@ export default function WorkoutForm() {
       return;
     }
     if (selectedExercises.length > 0) {
-      setExercises(selectedExercises.map((exerciseName) => ({ name: exerciseName, sets: [{ reps: "", weight: "", completed: false }] })));
+      setExercises(selectedExercises.map((exerciseName) => ({ name: exerciseName, sets: [{ reps: "", weight: "", restSeconds: "90", completed: false }] })));
       setName("New Workout");
       clearSelectedWorkoutExercises();
     }
@@ -158,7 +159,7 @@ export default function WorkoutForm() {
     navigate("/exercise?mode=workout-builder");
   };
   const removeExercise = (idx) => setExercises(exercises.filter((_, i) => i !== idx));
-  const addSet = (exIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: [...ex.sets, { reps: "", weight: "", completed: false }] } : ex)));
+  const addSet = (exIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: [...ex.sets, { reps: "", weight: "", restSeconds: "90", completed: false }] } : ex)));
   const removeSet = (exIdx, setIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.filter((_, j) => j !== setIdx) } : ex)));
   const updateSet = (exIdx, setIdx, field, value) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.map((s, j) => (j === setIdx ? { ...s, [field]: value } : s)) } : ex)));
 
@@ -167,7 +168,12 @@ export default function WorkoutForm() {
     setSaving(true);
     const cleanedExercises = exercises.filter((ex) => ex.name.trim()).map((ex) => ({
       name: ex.name,
-      sets: ex.sets.filter((s) => s.reps || s.weight).map((s) => ({ reps: Number(s.reps) || 0, weight: Number(s.weight) || 0, completed: Boolean(s.completed) })),
+      sets: ex.sets.filter((s) => s.reps || s.weight).map((s) => ({
+        reps: Number(s.reps) || 0,
+        weight: Number(s.weight) || 0,
+        restSeconds: Math.min(600, Math.max(15, Number(s.restSeconds) || 90)),
+        completed: Boolean(s.completed),
+      })),
     }));
     const data = {
       name, date, muscleGroup: muscleGroupLabel, notes, status, calories, favorite, template,
@@ -367,12 +373,19 @@ export default function WorkoutForm() {
                   <button type="button" onClick={() => removeExercise(exIdx)} className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 px-1"><span className="text-[11px] text-neutral-400 font-medium w-8">Set</span><span className="text-[11px] text-neutral-400 font-medium flex-1">Reps</span><span className="text-[11px] text-neutral-400 font-medium flex-1">Weight (lbs)</span><span className="w-8" /></div>
+                  <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] items-center gap-2 px-1">
+                    <span className="text-[11px] text-neutral-400 font-medium">Set</span>
+                    <span className="text-[11px] text-neutral-400 font-medium">Reps</span>
+                    <span className="text-[11px] text-neutral-400 font-medium">Weight</span>
+                    <span className="text-[11px] text-neutral-400 font-medium">Rest</span>
+                    <span className="w-8" />
+                  </div>
                   {exercise.sets.map((set, setIdx) => (
-                    <div key={setIdx} className="flex items-center gap-2">
+                    <div key={setIdx} className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] items-center gap-2">
                       <span className="text-xs text-neutral-400 font-medium w-8 text-center">{setIdx + 1}</span>
                       <Input type="number" value={set.reps} onChange={(e) => updateSet(exIdx, setIdx, "reps", e.target.value)} placeholder="0" className="h-9 flex-1" min="0" />
                       <Input type="number" value={set.weight} onChange={(e) => updateSet(exIdx, setIdx, "weight", e.target.value)} placeholder="0" className="h-9 flex-1" min="0" step="0.5" />
+                      <Input type="number" value={set.restSeconds ?? "90"} onChange={(e) => updateSet(exIdx, setIdx, "restSeconds", e.target.value)} placeholder="90" className="h-9 flex-1" min="15" max="600" step="15" />
                       <button type="button" onClick={() => exercise.sets.length > 1 && removeSet(exIdx, setIdx)} className={`w-8 p-1.5 rounded-lg transition-colors ${exercise.sets.length > 1 ? "text-neutral-400 hover:text-red-600 hover:bg-red-50" : "text-neutral-200"}`}><X className="w-4 h-4 mx-auto" /></button>
                     </div>
                   ))}

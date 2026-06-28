@@ -218,7 +218,10 @@ export default function WorkoutDetail() {
     );
     setLoggedExercises(nextExercises);
     if (willComplete) {
-      setRestSeconds(restDurationSeconds);
+      const nextRestSeconds = Math.min(600, Math.max(15, Number(currentSet?.restSeconds) || restDurationSeconds));
+      setRestDurationSeconds(nextRestSeconds);
+      setRestSeconds(nextRestSeconds);
+      setCustomRestInput(formatTimer(nextRestSeconds));
       setRestRunning(true);
     }
     saveExercises(nextExercises);
@@ -234,6 +237,7 @@ export default function WorkoutDetail() {
                 {
                   weight: exercise.sets?.at(-1)?.weight ?? "",
                   reps: exercise.sets?.at(-1)?.reps ?? "",
+                  restSeconds: exercise.sets?.at(-1)?.restSeconds ?? restDurationSeconds,
                   completed: false,
                 },
               ],

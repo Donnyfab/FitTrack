@@ -116,8 +116,8 @@ export default function Workouts() {
       workoutId,
       startX: touch.clientX,
       startY: touch.clientY,
-      startOffset: swipedWorkoutId === workoutId ? 88 : 0,
-      deltaX: swipedWorkoutId === workoutId ? 88 : 0,
+      startOffset: swipedWorkoutId === workoutId ? 92 : 0,
+      deltaX: swipedWorkoutId === workoutId ? 92 : 0,
       dragging: true,
       lockedAxis: null,
     });
@@ -144,7 +144,7 @@ export default function Workouts() {
     if (axis === "x") event.preventDefault();
 
     const nextOffset = Math.max(0, swipeState.startOffset + rawDeltaX);
-    const resistedOffset = nextOffset > 88 ? 88 + (nextOffset - 88) * 0.18 : nextOffset;
+    const resistedOffset = nextOffset > 92 ? 92 + (nextOffset - 92) * 0.18 : nextOffset;
     setSwipeState((current) => current?.workoutId === workoutId
       ? { ...current, lockedAxis: axis, deltaX: Math.min(resistedOffset, 108) }
       : current
@@ -279,15 +279,15 @@ export default function Workouts() {
               swipeState?.workoutId === workout.id
                 ? swipeState.deltaX
                 : swipedWorkoutId === workout.id
-                  ? 88
+                  ? 92
                   : 0;
             return (
               <div key={workout.id} className="relative overflow-hidden rounded-xl bg-white">
-                <div className="absolute inset-y-0 left-0 z-0 flex w-[88px] items-stretch">
+                <div className="absolute inset-y-0 left-0 z-0 flex w-[92px] items-center justify-center rounded-xl border border-neutral-200 bg-white">
                   <button
                     type="button"
                     onClick={() => deleteWorkout(workout)}
-                    className="my-px flex w-full items-center justify-center gap-1.5 rounded-l-xl bg-[#ff3b30] text-xs font-semibold text-white shadow-none"
+                    className="flex h-full w-full items-center justify-center gap-1.5 rounded-xl text-xs font-semibold text-[#ff3b30]"
                     aria-label={`Delete ${workout.name}`}
                   >
                     <Trash2 className="h-4 w-4" />

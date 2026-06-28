@@ -8,6 +8,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import Dashboard from './pages/Dashboard';
 import Workouts from './pages/Workouts';
+import AIPlan from './pages/AIPlan';
 import WorkoutDetail from './pages/WorkoutDetail';
 import WorkoutForm from './pages/WorkoutForm';
 import Exercises from './pages/Exercises';
@@ -62,6 +63,7 @@ const AuthenticatedApp = () => {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/workouts" element={<Workouts />} />
+          <Route path="/workouts/ai-plan" element={<AIPlan />} />
           <Route path="/workouts/new" element={<WorkoutForm />} />
           <Route path="/workouts/:id" element={<WorkoutDetail />} />
           <Route path="/workouts/:id/edit" element={<WorkoutForm />} />

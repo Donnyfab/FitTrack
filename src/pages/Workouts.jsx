@@ -24,6 +24,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Sparkles,
   Star,
   Trash2,
   Wand2,
@@ -260,6 +261,13 @@ export default function Workouts() {
               {tab}
             </button>
           ))}
+          <Link
+            to="/workouts/ai-plan"
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-100 bg-blue-50 px-3 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100"
+          >
+            <Sparkles className="h-4 w-4" />
+            Plan with AI
+          </Link>
         </div>
 
         <div className="flex gap-2">

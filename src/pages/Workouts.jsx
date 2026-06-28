@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Search,
   Star,
+  Trash2,
 } from "lucide-react";
 
 const tabs = ["All Workouts", "Favorites", "Templates"];
@@ -36,6 +37,8 @@ export default function Workouts() {
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [muscleFilter, setMuscleFilter] = useState("All");
+  const [swipedWorkoutId, setSwipedWorkoutId] = useState(null);
+  const [swipeState, setSwipeState] = useState(null);
 
   useEffect(() => {
     loadWorkouts();
@@ -98,6 +101,48 @@ export default function Workouts() {
     );
     try {
       await base44.entities.Workout.update(workout.id, { favorite: nextFavorite });
+    } catch {
+      loadWorkouts();
+    }
+  };
+
+  const handleSwipeStart = (event, workoutId) => {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    setSwipeState({
+      workoutId,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      deltaX: swipedWorkoutId === workoutId ? 96 : 0,
+      dragging: true,
+    });
+  };
+
+  const handleSwipeMove = (event, workoutId) => {
+    const touch = event.touches?.[0];
+    if (!touch || !swipeState || swipeState.workoutId !== workoutId) return;
+    const rawDeltaX = touch.clientX - swipeState.startX;
+    const rawDeltaY = touch.clientY - swipeState.startY;
+    if (Math.abs(rawDeltaY) > Math.abs(rawDeltaX) && Math.abs(rawDeltaY) > 18) return;
+    if (rawDeltaX > 8) event.preventDefault();
+    setSwipeState((current) => current?.workoutId === workoutId
+      ? { ...current, deltaX: Math.min(Math.max(rawDeltaX, 0), 104) }
+      : current
+    );
+  };
+
+  const handleSwipeEnd = (workoutId) => {
+    const nextOpen = swipeState?.workoutId === workoutId && swipeState.deltaX > 64;
+    setSwipedWorkoutId(nextOpen ? workoutId : null);
+    setSwipeState(null);
+  };
+
+  const deleteWorkout = async (workout) => {
+    if (!window.confirm(`Delete ${workout.name}? This cannot be undone.`)) return;
+    setSwipedWorkoutId(null);
+    setWorkouts((items) => items.filter((item) => item.id !== workout.id));
+    try {
+      await base44.entities.Workout.delete(workout.id);
     } catch {
       loadWorkouts();
     }
@@ -210,61 +255,82 @@ export default function Workouts() {
             const completedSets = getCompletedSetCount(workout);
             const plannedSets = countSets(workout);
             const duration = getWorkoutDurationMinutes(workout);
+            const swipeOffset =
+              swipeState?.workoutId === workout.id
+                ? swipeState.deltaX
+                : swipedWorkoutId === workout.id
+                  ? 96
+                  : 0;
             return (
-              <article
-                key={workout.id}
-                className="grid gap-3 bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 hover:shadow-sm transition-all md:grid-cols-[1fr_auto] md:items-center"
-              >
-                <div className="min-w-0 flex items-start gap-3">
-                  <div className="mt-0.5 w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
-                    <Dumbbell className="w-4 h-4 text-neutral-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Link to={`/workouts/${workout.id}`} className="font-medium text-neutral-900 truncate hover:text-neutral-600">
-                        {workout.name}
-                      </Link>
-                      {workout.favorite && <Star className="w-3.5 h-3.5 text-neutral-400 fill-neutral-400" />}
+              <div key={workout.id} className="relative overflow-hidden rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => deleteWorkout(workout)}
+                  className="absolute left-0 top-0 z-0 flex h-full w-24 items-center justify-center gap-1.5 rounded-xl bg-red-600 text-sm font-semibold text-white"
+                  aria-label={`Delete ${workout.name}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+                <article
+                  onTouchStart={(event) => handleSwipeStart(event, workout.id)}
+                  onTouchMove={(event) => handleSwipeMove(event, workout.id)}
+                  onTouchEnd={() => handleSwipeEnd(workout.id)}
+                  onTouchCancel={() => handleSwipeEnd(workout.id)}
+                  style={{ transform: `translateX(${swipeOffset}px)`, touchAction: "pan-y" }}
+                  className="relative z-10 grid gap-3 bg-white rounded-xl border border-neutral-200 p-4 hover:border-neutral-300 hover:shadow-sm transition-transform duration-200 md:grid-cols-[1fr_auto] md:items-center"
+                >
+                  <div className="min-w-0 flex items-start gap-3">
+                    <div className="mt-0.5 w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
+                      <Dumbbell className="w-4 h-4 text-neutral-500" />
                     </div>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-xs text-neutral-500">Last performed {formatDate(workout.date)}</span>
-                      {workout.muscleGroup && <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{workout.muscleGroup}</span>}
-                      <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{getWorkoutStatusLabel(workout)}</span>
-                      {workout.template && <span className="text-xs text-neutral-400">Template</span>}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Link to={`/workouts/${workout.id}`} className="font-medium text-neutral-900 truncate hover:text-neutral-600">
+                          {workout.name}
+                        </Link>
+                        {workout.favorite && <Star className="w-3.5 h-3.5 text-neutral-400 fill-neutral-400" />}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-neutral-500">Last performed {formatDate(workout.date)}</span>
+                        {workout.muscleGroup && <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{workout.muscleGroup}</span>}
+                        <span className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-full">{getWorkoutStatusLabel(workout)}</span>
+                        {workout.template && <span className="text-xs text-neutral-400">Template</span>}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button onClick={() => repeatWorkout(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800">
+                          <RotateCcw className="h-3.5 w-3.5" /> Repeat
+                        </button>
+                        <Link to={`/workouts/${workout.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                          <Play className="h-3.5 w-3.5" /> Quick start
+                        </Link>
+                        <button onClick={() => toggleFavorite(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                          <Star className={`h-3.5 w-3.5 ${workout.favorite ? "fill-neutral-900 text-neutral-900" : ""}`} /> Favorite
+                        </button>
+                      </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button onClick={() => repeatWorkout(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800">
-                        <RotateCcw className="h-3.5 w-3.5" /> Repeat
-                      </button>
-                      <Link to={`/workouts/${workout.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
-                        <Play className="h-3.5 w-3.5" /> Quick start
-                      </Link>
-                      <button onClick={() => toggleFavorite(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
-                        <Star className={`h-3.5 w-3.5 ${workout.favorite ? "fill-neutral-900 text-neutral-900" : ""}`} /> Favorite
-                      </button>
-                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 md:w-[320px] md:items-center">
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">{exerciseCount}</p>
-                    <p className="text-xs text-neutral-500">Exercises</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-neutral-900">{completedSets} / {plannedSets}</p>
-                    <p className="text-xs text-neutral-500">Sets done</p>
-                  </div>
-                  <div className="flex items-center justify-between">
+                  <div className="grid grid-cols-3 gap-3 md:w-[320px] md:items-center">
                     <div>
-                      <p className="text-sm font-semibold text-neutral-900">{formatDuration(duration)}</p>
-                      <p className="text-xs text-neutral-500">Duration</p>
+                      <p className="text-sm font-semibold text-neutral-900">{exerciseCount}</p>
+                      <p className="text-xs text-neutral-500">Exercises</p>
                     </div>
-                    <Link to={`/workouts/${workout.id}`} aria-label={`Open ${workout.name}`}>
-                      <ChevronRight className="w-4 h-4 text-neutral-300 hidden md:block" />
-                    </Link>
+                    <div>
+                      <p className="text-sm font-semibold text-neutral-900">{completedSets} / {plannedSets}</p>
+                      <p className="text-xs text-neutral-500">Sets done</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-900">{formatDuration(duration)}</p>
+                        <p className="text-xs text-neutral-500">Duration</p>
+                      </div>
+                      <Link to={`/workouts/${workout.id}`} aria-label={`Open ${workout.name}`}>
+                        <ChevronRight className="w-4 h-4 text-neutral-300 hidden md:block" />
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              </article>
+                </article>
+              </div>
             );
           })}
         </div>

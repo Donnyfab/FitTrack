@@ -211,8 +211,8 @@ export default function WorkoutForm() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
           <div><label className={labelClass}>Workout Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Push Day, Leg Day, Upper Body" required className="h-11" /></div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} required className="h-11" /></div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="min-w-0"><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} required className="h-11 min-w-0" /></div>
             <div className="relative">
               <label className={labelClass}>Muscle Group</label>
               <button
@@ -279,11 +279,11 @@ export default function WorkoutForm() {
               ))}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div><label className={labelClass}>Status</label><select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}><option value="completed">Completed</option><option value="scheduled">Scheduled</option><option value="planned">Planned</option><option value="missed">Missed</option></select></div>
             <div><label className={labelClass}>Calories</label><Input type="number" min="0" value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="Optional" className="h-11" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelClass}>Repeat</label>
               <button

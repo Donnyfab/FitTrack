@@ -268,8 +268,8 @@ export default function WorkoutDetail() {
       exerciseKey,
       startX: touch.clientX,
       startY: touch.clientY,
-      startOffset: swipedExerciseKey === exerciseKey ? 92 : 0,
-      deltaX: swipedExerciseKey === exerciseKey ? 92 : 0,
+      startOffset: swipedExerciseKey === exerciseKey ? -92 : 0,
+      deltaX: swipedExerciseKey === exerciseKey ? -92 : 0,
       lockedAxis: null,
     });
   };
@@ -294,16 +294,16 @@ export default function WorkoutDetail() {
 
     if (axis === "x") event.preventDefault();
 
-    const nextOffset = Math.max(0, exerciseSwipeState.startOffset + rawDeltaX);
-    const resistedOffset = nextOffset > 92 ? 92 + (nextOffset - 92) * 0.18 : nextOffset;
+    const nextOffset = Math.min(0, exerciseSwipeState.startOffset + rawDeltaX);
+    const resistedOffset = nextOffset < -92 ? -92 + (nextOffset + 92) * 0.18 : nextOffset;
     setExerciseSwipeState((current) => current?.exerciseKey === exerciseKey
-      ? { ...current, lockedAxis: axis, deltaX: Math.min(resistedOffset, 108) }
+      ? { ...current, lockedAxis: axis, deltaX: Math.max(resistedOffset, -108) }
       : current
     );
   };
 
   const handleExerciseSwipeEnd = (exerciseKey) => {
-    const nextOpen = exerciseSwipeState?.exerciseKey === exerciseKey && exerciseSwipeState.deltaX > 44;
+    const nextOpen = exerciseSwipeState?.exerciseKey === exerciseKey && exerciseSwipeState.deltaX < -44;
     setSwipedExerciseKey(nextOpen ? exerciseKey : null);
     setExerciseSwipeState(null);
   };
@@ -667,9 +667,9 @@ export default function WorkoutDetail() {
             exerciseSwipeState?.exerciseKey === exerciseKey
               ? exerciseSwipeState.deltaX
               : swipedExerciseKey === exerciseKey
-                ? 92
+                ? -92
                 : 0;
-          const deleteVisible = swipeOffset > 8 || swipedExerciseKey === exerciseKey;
+          const deleteVisible = swipeOffset < -8 || swipedExerciseKey === exerciseKey;
           return (
           <div
             key={exerciseKey}

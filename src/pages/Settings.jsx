@@ -37,7 +37,7 @@ function ToggleRow({ label, description, checked, onChange }) {
 }
 
 export default function Settings() {
-  const { user, settings, logout, updateUserProfile } = useAuth();
+  const { user, settings, logout, updateUserProfile, updateThemePreference } = useAuth();
   const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
   const [activeTab, setActiveTab] = useState("Profile");
@@ -49,6 +49,7 @@ export default function Settings() {
   const [autoSave, setAutoSave] = useState(settings?.auto_save_workouts ?? true);
   const [theme, setTheme] = useState(() => normalizeThemePreference(settings?.theme_preference || getStoredThemePreference()));
   const [saving, setSaving] = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
   const [notifications, setNotifications] = useState({
     workoutReminders: settings?.notification_workout_reminders ?? true,
     goalProgress: settings?.notification_goal_progress ?? true,
@@ -90,9 +91,24 @@ export default function Settings() {
     return () => media.removeEventListener("change", handleSystemThemeChange);
   }, [theme]);
 
-  const handleThemeChange = (nextTheme) => {
+  const handleThemeChange = async (nextTheme) => {
     const normalized = applyThemePreference(nextTheme);
     setTheme(normalized);
+    setSavingTheme(true);
+    try {
+      await updateThemePreference(normalized);
+    } catch (error) {
+      const fallbackTheme = normalizeThemePreference(settings?.theme_preference || "light");
+      applyThemePreference(fallbackTheme);
+      setTheme(fallbackTheme);
+      toast({
+        title: "Theme not saved",
+        description: error.message || "Could not save your theme preference.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingTheme(false);
+    }
   };
 
   const handleSave = async (event) => {
@@ -251,6 +267,7 @@ export default function Settings() {
                     </label>
                   ))}
                 </div>
+                <p className="text-xs text-neutral-500">{savingTheme ? "Saving theme..." : "Theme saves automatically."}</p>
               </div>
             </div>
             <div className="mt-4 space-y-3">

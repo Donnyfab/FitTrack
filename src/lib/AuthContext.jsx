@@ -269,6 +269,34 @@ export const AuthProvider = ({ children }) => {
     return refreshSavedUserData();
   };
 
+  const updateThemePreference = async (themePreference) => {
+    if (!user?.id) {
+      throw new Error('Authentication required');
+    }
+
+    const normalizedTheme = normalizeThemePreference(themePreference || getStoredThemePreference());
+    applyThemePreference(normalizedTheme);
+
+    const { data, error } = await supabase
+      .from('user_settings')
+      .upsert(
+        {
+          user_id: user.id,
+          theme_preference: normalizedTheme,
+        },
+        { onConflict: 'user_id' }
+      )
+      .select('*')
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    setSettings(data);
+    return normalizedTheme;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -287,6 +315,7 @@ export const AuthProvider = ({ children }) => {
         checkAppState: checkUserAuth,
         refreshSavedUserData,
         updateUserProfile,
+        updateThemePreference,
       }}
     >
       {children}

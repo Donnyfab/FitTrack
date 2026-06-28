@@ -4,11 +4,50 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MUSCLE_GROUPS } from "@/lib/constants";
-import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises } from "@/lib/workoutSelection";
-import { clearWorkoutDraft, readWorkoutDraft } from "@/lib/trainingInsights";
-import { ArrowLeft, X, Trash2 } from "lucide-react";
+import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises, writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
+import { clearWorkoutDraft, readWorkoutDraft, writeWorkoutDraft } from "@/lib/trainingInsights";
+import { ArrowLeft, CalendarDays, Repeat, X, Trash2 } from "lucide-react";
 
-const emptyExercise = () => ({ name: "", sets: [{ reps: "", weight: "", completed: false }] });
+const weekdayOptions = [
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+  { value: 0, label: "Sunday" },
+];
+
+function parseMuscleGroups(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeExercise(exercise) {
+  return {
+    name: exercise.name || "",
+    sets: exercise.sets?.length ? exercise.sets.map((set) => ({
+      reps: set.reps?.toString() || "",
+      weight: set.weight?.toString() || "",
+      completed: Boolean(set.completed),
+    })) : [{ reps: "", weight: "", completed: false }],
+  };
+}
+
+function mergeSelectedExercises(existingExercises, selectedExerciseNames) {
+  const current = existingExercises.map(normalizeExercise);
+  const existingNames = new Set(current.map((exercise) => exercise.name).filter(Boolean));
+  selectedExerciseNames.forEach((exerciseName) => {
+    if (!existingNames.has(exerciseName)) {
+      current.push({ name: exerciseName, sets: [{ reps: "", weight: "", completed: false }] });
+      existingNames.add(exerciseName);
+    }
+  });
+  return current;
+}
 
 export default function WorkoutForm() {
   const { id } = useParams();
@@ -16,13 +55,15 @@ export default function WorkoutForm() {
   const isEdit = !!id;
   const [name, setName] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [muscleGroup, setMuscleGroup] = useState("");
+  const [muscleGroups, setMuscleGroups] = useState([]);
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("completed");
   const [calories, setCalories] = useState("");
   const [favorite, setFavorite] = useState(false);
   const [template, setTemplate] = useState(false);
-  const [exercises, setExercises] = useState([emptyExercise()]);
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatDayOfWeek, setRepeatDayOfWeek] = useState(new Date().getDay());
+  const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
 
@@ -31,28 +72,24 @@ export default function WorkoutForm() {
       loadWorkout();
       return;
     }
+    const selectedExercises = readSelectedWorkoutExercises();
     const draft = readWorkoutDraft();
     if (draft) {
       setName(draft.name || "New Workout");
       setDate(draft.date || new Date().toISOString().split("T")[0]);
-      setMuscleGroup(draft.muscleGroup || "");
+      setMuscleGroups(parseMuscleGroups(draft.muscleGroups || draft.muscleGroup));
       setNotes(draft.notes || "");
       setStatus(draft.status || "planned");
       setCalories(draft.calories?.toString() || "");
       setFavorite(Boolean(draft.favorite));
       setTemplate(Boolean(draft.template));
-      setExercises(draft.exercises?.length ? draft.exercises.map((exercise) => ({
-        name: exercise.name || "",
-        sets: exercise.sets?.length ? exercise.sets.map((set) => ({
-          reps: set.reps?.toString() || "",
-          weight: set.weight?.toString() || "",
-          completed: Boolean(set.completed),
-        })) : [{ reps: "", weight: "", completed: false }],
-      })) : [emptyExercise()]);
+      setRepeatWeekly(Boolean(draft.repeatWeekly));
+      setRepeatDayOfWeek(Number.isInteger(draft.repeatDayOfWeek) ? draft.repeatDayOfWeek : new Date(`${draft.date || new Date().toISOString().split("T")[0]}T00:00:00`).getDay());
+      setExercises(mergeSelectedExercises(draft.exercises || [], selectedExercises));
       clearWorkoutDraft();
+      clearSelectedWorkoutExercises();
       return;
     }
-    const selectedExercises = readSelectedWorkoutExercises();
     if (selectedExercises.length > 0) {
       setExercises(selectedExercises.map((exerciseName) => ({ name: exerciseName, sets: [{ reps: "", weight: "", completed: false }] })));
       setName("New Workout");
@@ -65,22 +102,46 @@ export default function WorkoutForm() {
       const workout = await base44.entities.Workout.get(id);
       setName(workout.name);
       setDate(workout.date);
-      setMuscleGroup(workout.muscleGroup || "");
+      setMuscleGroups(parseMuscleGroups(workout.muscleGroup));
       setNotes(workout.notes || "");
       setStatus(workout.status || "completed");
       setCalories(workout.calories?.toString() || "");
       setFavorite(Boolean(workout.favorite));
       setTemplate(Boolean(workout.template));
-      setExercises(workout.exercises?.length ? workout.exercises.map((ex) => ({
-        name: ex.name || "",
-        sets: ex.sets?.length ? ex.sets.map((s) => ({ reps: s.reps?.toString() || "", weight: s.weight?.toString() || "", completed: Boolean(s.completed) })) : [{ reps: "", weight: "", completed: false }],
-      })) : [emptyExercise()]);
+      setExercises(workout.exercises?.length ? workout.exercises.map(normalizeExercise) : []);
     } finally { setLoading(false); }
   };
 
-  const addExercise = () => setExercises([...exercises, emptyExercise()]);
+  const muscleGroupLabel = muscleGroups.join(", ");
+  const toggleMuscleGroup = (group) => {
+    setMuscleGroups((groups) =>
+      groups.includes(group) ? groups.filter((item) => item !== group) : [...groups, group]
+    );
+  };
+  const handleDateChange = (nextDate) => {
+    setDate(nextDate);
+    if (nextDate) setRepeatDayOfWeek(new Date(`${nextDate}T00:00:00`).getDay());
+  };
+  const currentDraft = () => ({
+    name,
+    date,
+    muscleGroup: muscleGroupLabel,
+    muscleGroups,
+    notes,
+    status,
+    calories,
+    favorite,
+    template,
+    repeatWeekly,
+    repeatDayOfWeek,
+    exercises,
+  });
+  const addExercise = () => {
+    writeWorkoutDraft(currentDraft());
+    writeSelectedWorkoutExercises(exercises.map((exercise) => exercise.name).filter(Boolean));
+    navigate("/exercise?mode=workout-builder");
+  };
   const removeExercise = (idx) => setExercises(exercises.filter((_, i) => i !== idx));
-  const updateExerciseName = (idx, value) => setExercises(exercises.map((ex, i) => (i === idx ? { ...ex, name: value } : ex)));
   const addSet = (exIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: [...ex.sets, { reps: "", weight: "", completed: false }] } : ex)));
   const removeSet = (exIdx, setIdx) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.filter((_, j) => j !== setIdx) } : ex)));
   const updateSet = (exIdx, setIdx, field, value) => setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.map((s, j) => (j === setIdx ? { ...s, [field]: value } : s)) } : ex)));
@@ -88,16 +149,34 @@ export default function WorkoutForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
+    const cleanedExercises = exercises.filter((ex) => ex.name.trim()).map((ex) => ({
+      name: ex.name,
+      sets: ex.sets.filter((s) => s.reps || s.weight).map((s) => ({ reps: Number(s.reps) || 0, weight: Number(s.weight) || 0, completed: Boolean(s.completed) })),
+    }));
     const data = {
-      name, date, muscleGroup, notes, status, calories, favorite, template,
-      exercises: exercises.filter((ex) => ex.name.trim()).map((ex) => ({
-        name: ex.name,
-        sets: ex.sets.filter((s) => s.reps || s.weight).map((s) => ({ reps: Number(s.reps) || 0, weight: Number(s.weight) || 0, completed: Boolean(s.completed) })),
-      })),
+      name, date, muscleGroup: muscleGroupLabel, notes, status, calories, favorite, template,
+      exercises: cleanedExercises,
     };
     try {
-      if (isEdit) await base44.entities.Workout.update(id, data);
-      else await base44.entities.Workout.create(data);
+      const savedWorkout = isEdit
+        ? await base44.entities.Workout.update(id, data)
+        : await base44.entities.Workout.create(data);
+      if (repeatWeekly && savedWorkout?.id) {
+        const schedule = await base44.entities.RecurringSchedule.create({
+          dayOfWeek: repeatDayOfWeek,
+          name,
+          muscleGroup: muscleGroupLabel,
+          exercises: cleanedExercises,
+          templateWorkoutId: savedWorkout.id,
+          startDate: date,
+          endDate: null,
+          active: true,
+        });
+        await base44.entities.Workout.update(savedWorkout.id, {
+          recurringScheduleId: schedule.id,
+          scheduledFor: date,
+        });
+      }
       clearSelectedWorkoutExercises();
       clearWorkoutDraft();
       navigate(isEdit ? `/workouts/${id}` : "/workouts");
@@ -126,13 +205,65 @@ export default function WorkoutForm() {
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
           <div><label className={labelClass}>Workout Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Push Day, Leg Day, Upper Body" required className="h-11" /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="h-11" /></div>
-            <div><label className={labelClass}>Muscle Group</label><select value={muscleGroup} onChange={(e) => setMuscleGroup(e.target.value)} className={selectClass}><option value="">Select...</option>{MUSCLE_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+            <div><label className={labelClass}>Date</label><Input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} required className="h-11" /></div>
+            <div><label className={labelClass}>Status</label><select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}><option value="completed">Completed</option><option value="scheduled">Scheduled</option><option value="planned">Planned</option><option value="missed">Missed</option></select></div>
+          </div>
+          <div>
+            <label className={labelClass}>Muscle Groups</label>
+            <div className="flex flex-wrap gap-2">
+              {MUSCLE_GROUPS.map((group) => (
+                <button
+                  key={group}
+                  type="button"
+                  onClick={() => toggleMuscleGroup(group)}
+                  className={`rounded-full border px-3 py-2 text-sm font-medium transition-colors ${
+                    muscleGroups.includes(group)
+                      ? "border-neutral-900 bg-neutral-900 text-white"
+                      : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900"
+                  }`}
+                >
+                  {group}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className={labelClass}>Status</label><select value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass}><option value="completed">Completed</option><option value="scheduled">Scheduled</option><option value="planned">Planned</option><option value="missed">Missed</option></select></div>
             <div><label className={labelClass}>Calories</label><Input type="number" min="0" value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="Optional" className="h-11" /></div>
+            <div>
+              <label className={labelClass}>Repeat</label>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextRepeat = !repeatWeekly;
+                  setRepeatWeekly(nextRepeat);
+                  if (nextRepeat && status === "completed") setStatus("scheduled");
+                }}
+                className={`flex h-11 w-full items-center justify-between rounded-lg border px-3 text-sm font-medium transition-colors ${
+                  repeatWeekly ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white text-neutral-700"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2"><Repeat className="h-4 w-4" /> Weekly plan</span>
+                <span>{repeatWeekly ? "On" : "Off"}</span>
+              </button>
+            </div>
           </div>
+          {repeatWeekly && (
+            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <label className={labelClass}>Repeat Every</label>
+              <div className="grid grid-cols-[1fr_auto] gap-3">
+                <select value={repeatDayOfWeek} onChange={(e) => setRepeatDayOfWeek(Number(e.target.value))} className={selectClass}>
+                  {weekdayOptions.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
+                </select>
+                <div className="hidden items-center gap-2 rounded-lg bg-white px-3 text-sm text-neutral-500 sm:flex">
+                  <CalendarDays className="h-4 w-4" />
+                  Starts {date}
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-neutral-500">
+                FitTrack will show this workout on the calendar every {weekdayOptions.find((day) => day.value === repeatDayOfWeek)?.label}.
+              </p>
+            </div>
+          )}
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex items-center justify-between rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700">
               Favorite
@@ -150,8 +281,11 @@ export default function WorkoutForm() {
             {exercises.map((exercise, exIdx) => (
               <div key={exIdx} className="bg-white rounded-2xl border border-neutral-200 p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Input value={exercise.name} onChange={(e) => updateExerciseName(exIdx, e.target.value)} placeholder="Exercise name (e.g. Bench Press)" className="h-10 flex-1" />
-                  {exercises.length > 1 && <button type="button" onClick={() => removeExercise(exIdx)} className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>}
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-neutral-900">{exercise.name}</p>
+                    <p className="text-xs text-neutral-500">Edit sets, reps, and weight after adding from the library.</p>
+                  </div>
+                  <button type="button" onClick={() => removeExercise(exIdx)} className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 px-1"><span className="text-[11px] text-neutral-400 font-medium w-8">Set</span><span className="text-[11px] text-neutral-400 font-medium flex-1">Reps</span><span className="text-[11px] text-neutral-400 font-medium flex-1">Weight (lbs)</span><span className="w-8" /></div>

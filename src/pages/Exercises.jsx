@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
+import { readSelectedWorkoutExercises, writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import {
   bestSetFromSets,
   estimateOneRepMax,
@@ -34,6 +34,8 @@ const iconForGroup = (group) => {
 
 export default function Exercises() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isWorkoutBuilder = searchParams.get("mode") === "workout-builder";
   const [exercises, setExercises] = useState(exerciseCatalog);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +45,8 @@ export default function Exercises() {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_EXERCISES);
   const [query, setQuery] = useState("");
   const [selectedExercise, setSelectedExercise] = useState(exerciseCatalog[0]);
-  const [selectedForWorkout, setSelectedForWorkout] = useState([]);
+  const [selectedForWorkout, setSelectedForWorkout] = useState(() => readSelectedWorkoutExercises());
+  const [pendingWorkoutExercise, setPendingWorkoutExercise] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", muscleGroup: "Chest", equipment: "Dumbbell", tip: "" });
 
@@ -169,13 +172,7 @@ export default function Exercises() {
     setShowCreate(false);
   };
 
-  const selectForWorkout = async (exercise) => {
-    if (!exercise?.name) return;
-    const nextItems = selectedForWorkout.includes(exercise.name)
-      ? selectedForWorkout
-      : [...selectedForWorkout, exercise.name];
-    setSelectedForWorkout(nextItems);
-    writeSelectedWorkoutExercises(nextItems);
+  const persistExerciseForLibrary = async (exercise) => {
     try {
       await base44.entities.UserExercise.upsert(
         { ...exercise, custom: Boolean(exercise.custom), favorite: Boolean(exercise.favorite) },
@@ -184,6 +181,31 @@ export default function Exercises() {
     } catch {
       // Selection still works through session storage; persistence will retry on favorite/custom edits.
     }
+  };
+
+  const selectForWorkout = async (exercise) => {
+    if (!exercise?.name) return;
+    if (isWorkoutBuilder) {
+      setSelectedExercise(exercise);
+      setPendingWorkoutExercise(exercise.name);
+      await persistExerciseForLibrary(exercise);
+      return;
+    }
+    const nextItems = selectedForWorkout.includes(exercise.name)
+      ? selectedForWorkout
+      : [...selectedForWorkout, exercise.name];
+    setSelectedForWorkout(nextItems);
+    writeSelectedWorkoutExercises(nextItems);
+    await persistExerciseForLibrary(exercise);
+  };
+
+  const confirmAddExerciseToWorkout = () => {
+    if (!pendingWorkoutExercise) return;
+    const nextItems = selectedForWorkout.includes(pendingWorkoutExercise)
+      ? selectedForWorkout
+      : [...selectedForWorkout, pendingWorkoutExercise];
+    writeSelectedWorkoutExercises(nextItems);
+    navigate("/workouts/new");
   };
 
   const startWorkoutFromSelection = () => {
@@ -305,7 +327,10 @@ export default function Exercises() {
             return (
               <button
                 key={exercise.name}
-                onClick={() => setSelectedExercise(exercise)}
+                onClick={() => {
+                  setSelectedExercise(exercise);
+                  if (isWorkoutBuilder) setPendingWorkoutExercise(exercise.name);
+                }}
                 className={`text-left bg-white rounded-2xl border p-4 transition-all hover:shadow-sm ${
                   selected ? "border-neutral-400" : "border-neutral-200 hover:border-neutral-300"
                 }`}
@@ -417,15 +442,34 @@ export default function Exercises() {
             <p className="text-sm text-neutral-600 mt-2">{selectedExercise?.tip}</p>
           </div>
 
-          <button
-            onClick={() => selectForWorkout(selectedExercise)}
-            className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800"
-          >
-            <Plus className="w-4 h-4" />
-            Select for Workout
-          </button>
+          {isWorkoutBuilder ? (
+            <div className="mt-5 space-y-2">
+              <button
+                onClick={pendingWorkoutExercise ? confirmAddExerciseToWorkout : () => selectForWorkout(selectedExercise)}
+                disabled={!selectedExercise}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                {pendingWorkoutExercise ? "Add Exercise" : "Select Exercise"}
+              </button>
+              <button
+                onClick={() => navigate("/workouts/new")}
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-200 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Back to workout
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => selectForWorkout(selectedExercise)}
+              className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800"
+            >
+              <Plus className="w-4 h-4" />
+              Select for Workout
+            </button>
+          )}
 
-          {selectedForWorkout.length > 0 && (
+          {!isWorkoutBuilder && selectedForWorkout.length > 0 && (
             <div className="mt-5 border-t border-neutral-100 pt-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-neutral-900">Selected exercises</p>
@@ -459,6 +503,24 @@ export default function Exercises() {
           )}
         </aside>
       </div>
+
+      {isWorkoutBuilder && pendingWorkoutExercise && (
+        <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 px-4 lg:hidden">
+          <div className="mx-auto flex max-w-lg items-center gap-3 rounded-2xl border border-neutral-200 bg-white/95 p-3 shadow-[0_18px_60px_-28px_rgba(23,23,23,0.55)] backdrop-blur-xl">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-neutral-500">Selected exercise</p>
+              <p className="truncate text-sm font-semibold text-neutral-900">{pendingWorkoutExercise}</p>
+            </div>
+            <button
+              onClick={confirmAddExerciseToWorkout}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white"
+            >
+              <Plus className="h-4 w-4" />
+              Add Exercise
+            </button>
+          </div>
+        </div>
+      )}
 
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCreate(false)}>

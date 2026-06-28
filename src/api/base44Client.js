@@ -8,6 +8,8 @@ const SORT_COLUMN_MAP = {
   date: 'date',
   recorded_at: 'recorded_at',
   created_date: 'created_at',
+  dayOfWeek: 'day_of_week',
+  startDate: 'start_date',
 };
 
 const FILTER_COLUMN_MAP = {
@@ -15,6 +17,10 @@ const FILTER_COLUMN_MAP = {
   isFavorite: 'is_favorite',
   isCustom: 'is_custom',
   recordedAt: 'recorded_at',
+  dayOfWeek: 'day_of_week',
+  templateWorkoutId: 'template_workout_id',
+  recurringScheduleId: 'recurring_schedule_id',
+  scheduledFor: 'scheduled_for',
 };
 
 function parseSort(sortStr) {
@@ -40,6 +46,8 @@ function mapWorkout(row) {
     favorite: Boolean(row.favorite),
     template: Boolean(row.template),
     calories: row.calories,
+    recurringScheduleId: row.recurring_schedule_id,
+    scheduledFor: row.scheduled_for,
     created_date: row.created_at,
   };
 }
@@ -70,6 +78,8 @@ function toDbWorkout(data) {
   if ('favorite' in data) row.favorite = Boolean(data.favorite);
   if ('template' in data) row.template = Boolean(data.template);
   if ('calories' in data) row.calories = data.calories === '' || data.calories == null ? null : Number(data.calories);
+  if ('recurringScheduleId' in data) row.recurring_schedule_id = data.recurringScheduleId || null;
+  if ('scheduledFor' in data) row.scheduled_for = data.scheduledFor || null;
   return row;
 }
 
@@ -128,6 +138,35 @@ function toDbBodyStat(data) {
   if ('weight' in data) row.weight = data.weight === '' || data.weight == null ? null : Number(data.weight);
   if ('bodyFatPercentage' in data) row.body_fat_percentage = data.bodyFatPercentage === '' || data.bodyFatPercentage == null ? null : Number(data.bodyFatPercentage);
   if ('notes' in data) row.notes = data.notes || null;
+  return row;
+}
+
+function mapRecurringSchedule(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    dayOfWeek: row.day_of_week,
+    name: row.name,
+    muscleGroup: row.muscle_group,
+    exercises: row.exercises ?? [],
+    templateWorkoutId: row.template_workout_id,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    active: Boolean(row.active),
+    created_date: row.created_at,
+  };
+}
+
+function toDbRecurringSchedule(data) {
+  const row = {};
+  if ('dayOfWeek' in data) row.day_of_week = Number(data.dayOfWeek);
+  if ('name' in data) row.name = data.name;
+  if ('muscleGroup' in data) row.muscle_group = data.muscleGroup || null;
+  if ('exercises' in data) row.exercises = data.exercises ?? [];
+  if ('templateWorkoutId' in data) row.template_workout_id = data.templateWorkoutId || null;
+  if ('startDate' in data) row.start_date = data.startDate;
+  if ('endDate' in data) row.end_date = data.endDate || null;
+  if ('active' in data) row.active = Boolean(data.active);
   return row;
 }
 
@@ -350,5 +389,6 @@ export const base44 = {
     Goal: createEntity('goals', mapGoal, toDbGoal),
     UserExercise: createEntity('user_exercises', mapUserExercise, toDbUserExercise),
     BodyStat: createEntity('body_stats', mapBodyStat, toDbBodyStat),
+    RecurringSchedule: createEntity('recurring_schedules', mapRecurringSchedule, toDbRecurringSchedule),
   },
 };

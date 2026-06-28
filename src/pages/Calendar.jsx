@@ -12,6 +12,7 @@ import {
   getCompletedSetCount,
   getMissedWorkoutCount,
   getSetCount,
+  getStarterRoutine,
   getWorkoutDurationMinutes,
   writeWorkoutDraft,
 } from "@/lib/trainingInsights";
@@ -19,12 +20,24 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  CalendarPlus,
   Dumbbell,
   Play,
   Plus,
+  Repeat,
+  Trash2,
 } from "lucide-react";
 
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const planDays = [
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+  { value: 0, label: "Sunday" },
+];
 
 const monthLabel = (date) =>
   date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -49,28 +62,54 @@ function eventTone(type) {
   return "bg-neutral-900";
 }
 
+function scheduleAppliesToDate(schedule, date) {
+  const key = getDateKey(date);
+  return (
+    schedule.active &&
+    Number(schedule.dayOfWeek) === date.getDay() &&
+    key >= schedule.startDate &&
+    (!schedule.endDate || key <= schedule.endDate)
+  );
+}
+
 export default function CalendarPage() {
   const navigate = useNavigate();
   const { settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
+  const [recurringSchedules, setRecurringSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeMonth, setActiveMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => getDateKey(new Date()));
+  const [showPlanBuilder, setShowPlanBuilder] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState(() => ({
+    dayOfWeek: 1,
+    templateWorkoutId: "",
+    startDate: getDateKey(new Date()),
+    endDate: "",
+  }));
 
   useEffect(() => {
-    loadWorkouts();
+    loadCalendarData();
   }, []);
 
-  const loadWorkouts = async () => {
+  const loadCalendarData = async () => {
     try {
-      setWorkouts(await base44.entities.Workout.list("-date", 200));
+      const [workoutRows, scheduleRows] = await Promise.all([
+        base44.entities.Workout.list("-date", 300),
+        base44.entities.RecurringSchedule.list("dayOfWeek", 100),
+      ]);
+      setWorkouts(workoutRows);
+      setRecurringSchedules(scheduleRows);
     } finally {
       setLoading(false);
     }
   };
 
+  const days = buildCalendarDays(activeMonth);
+
   const events = useMemo(() => {
-    return workouts.map((workout) => ({
+    const actualEvents = workouts.map((workout) => ({
+      id: workout.id,
       date: workout.date,
       name: workout.name,
       muscleGroup: workout.muscleGroup || "Workout",
@@ -87,9 +126,44 @@ export default function CalendarPage() {
       plannedSets: getSetCount(workout),
       duration: getWorkoutDurationMinutes(workout),
       hasPr: detectWorkoutPRs(workout, workouts.filter((item) => item.id !== workout.id)).length > 0,
+      virtual: false,
       workout,
     }));
-  }, [workouts]);
+
+    const actualScheduleDates = new Set(
+      actualEvents
+        .filter((event) => event.workout?.recurringScheduleId)
+        .map((event) => `${event.workout.recurringScheduleId}:${event.date}`)
+    );
+
+    const virtualEvents = days.flatMap((date) => {
+      const dateKey = getDateKey(date);
+      return recurringSchedules
+        .filter((schedule) => scheduleAppliesToDate(schedule, date))
+        .filter((schedule) => !actualScheduleDates.has(`${schedule.id}:${dateKey}`))
+        .map((schedule) => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const eventDate = new Date(`${dateKey}T00:00:00`);
+          return {
+            id: `recurring-${schedule.id}-${dateKey}`,
+            date: dateKey,
+            name: schedule.name,
+            muscleGroup: schedule.muscleGroup || "Workout",
+            type: eventDate < today ? "missed" : "scheduled",
+            exercises: schedule.exercises?.length || 0,
+            completedSets: 0,
+            plannedSets: getSetCount(schedule),
+            duration: getWorkoutDurationMinutes(schedule),
+            hasPr: false,
+            virtual: true,
+            schedule,
+          };
+        });
+    });
+
+    return [...actualEvents, ...virtualEvents];
+  }, [days, recurringSchedules, workouts]);
 
   const eventsByDate = useMemo(
     () =>
@@ -100,9 +174,9 @@ export default function CalendarPage() {
     [events]
   );
 
-  const days = buildCalendarDays(activeMonth);
   const selectedEvents = eventsByDate[selectedDate] || [];
   const selectedHasEvents = selectedEvents.length > 0;
+  const workoutTemplates = workouts.filter((workout) => (workout.exercises || []).length > 0);
 
   const today = new Date();
   const todayKey = getDateKey(today);
@@ -118,6 +192,7 @@ export default function CalendarPage() {
   const weeklySets = weeklyCompleted.reduce((sum, event) => sum + event.completedSets, 0);
   const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
   const missedWorkouts = getMissedWorkoutCount(workouts);
+  const missedRecurring = events.filter((event) => event.virtual && event.type === "missed").length;
 
   const openWorkoutDraft = (status) => {
     writeWorkoutDraft({
@@ -131,6 +206,30 @@ export default function CalendarPage() {
     navigate("/workouts/new");
   };
 
+  const createWorkoutFromRecurring = async (event, status = "planned") => {
+    if (!event?.schedule) return null;
+    const created = await base44.entities.Workout.create({
+      name: event.schedule.name,
+      date: event.date,
+      muscleGroup: event.schedule.muscleGroup,
+      notes: "Created from recurring weekly plan.",
+      status,
+      exercises: (event.schedule.exercises || []).map((exercise) => ({
+        ...exercise,
+        sets: (exercise.sets || []).map((set) => ({ ...set, completed: false })),
+      })),
+      recurringScheduleId: event.schedule.id,
+      scheduledFor: event.date,
+    });
+    await loadCalendarData();
+    return created;
+  };
+
+  const startRecurringEvent = async (event) => {
+    const created = await createWorkoutFromRecurring(event, "planned");
+    if (created?.id) navigate(`/workouts/${created.id}`);
+  };
+
   const repeatNextWeek = async (event) => {
     if (!event?.workout) return;
     const nextDate = new Date(`${event.date}T00:00:00`);
@@ -139,12 +238,69 @@ export default function CalendarPage() {
       ...event.workout,
       date: getDateKey(nextDate),
       status: "scheduled",
+      recurringScheduleId: event.workout.recurringScheduleId,
+      scheduledFor: getDateKey(nextDate),
       exercises: (event.workout.exercises || []).map((exercise) => ({
         ...exercise,
         sets: (exercise.sets || []).map((set) => ({ ...set, completed: false })),
       })),
     });
-    loadWorkouts();
+    loadCalendarData();
+  };
+
+  const addRecurringSchedule = async (event) => {
+    event.preventDefault();
+    const source = workouts.find((workout) => workout.id === scheduleForm.templateWorkoutId);
+    if (!source) return;
+    await base44.entities.RecurringSchedule.create({
+      dayOfWeek: scheduleForm.dayOfWeek,
+      name: source.name,
+      muscleGroup: source.muscleGroup,
+      exercises: source.exercises || [],
+      templateWorkoutId: source.id,
+      startDate: scheduleForm.startDate || todayKey,
+      endDate: scheduleForm.endDate || null,
+      active: true,
+    });
+    setScheduleForm((current) => ({ ...current, templateWorkoutId: "" }));
+    setShowPlanBuilder(false);
+    loadCalendarData();
+  };
+
+  const createPplSchedule = async () => {
+    await Promise.all(recurringSchedules.map((schedule) => base44.entities.RecurringSchedule.delete(schedule.id)));
+    const plan = [
+      { dayOfWeek: 1, day: "Push" },
+      { dayOfWeek: 2, day: "Pull" },
+      { dayOfWeek: 3, day: "Legs" },
+      { dayOfWeek: 4, day: "Push" },
+      { dayOfWeek: 5, day: "Pull" },
+      { dayOfWeek: 6, day: "Legs" },
+    ];
+    await Promise.all(plan.map(({ dayOfWeek, day }) => {
+      const routine = getStarterRoutine(settings?.workout_split_preference, day);
+      return base44.entities.RecurringSchedule.create({
+        dayOfWeek,
+        name: routine.name,
+        muscleGroup: routine.muscleGroup,
+        exercises: routine.exercises,
+        startDate: todayKey,
+        endDate: null,
+        active: true,
+      });
+    }));
+    loadCalendarData();
+  };
+
+  const toggleRecurringSchedule = async (schedule) => {
+    await base44.entities.RecurringSchedule.update(schedule.id, { active: !schedule.active });
+    loadCalendarData();
+  };
+
+  const deleteRecurringSchedule = async (schedule) => {
+    if (!window.confirm(`Delete ${schedule.name} from the weekly plan?`)) return;
+    await base44.entities.RecurringSchedule.delete(schedule.id);
+    loadCalendarData();
   };
 
   if (loading) {
@@ -164,6 +320,12 @@ export default function CalendarPage() {
           <p className="text-sm text-neutral-500 mt-1">Review logged workouts, scheduled sessions, missed plans, and rest days.</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPlanBuilder((value) => !value)}
+            className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            Weekly Plan
+          </button>
           <button
             onClick={() => setActiveMonth(new Date(activeMonth.getFullYear(), activeMonth.getMonth() - 1, 1))}
             className="h-10 w-10 rounded-lg border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
@@ -190,6 +352,104 @@ export default function CalendarPage() {
           </button>
         </div>
       </div>
+
+      {showPlanBuilder && (
+        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Recurring Weekly Plan</p>
+                <h2 className="mt-2 text-lg font-semibold text-neutral-900">Schedule workouts automatically</h2>
+                <p className="mt-1 text-sm text-neutral-500">Pick a day and a saved workout/template. Future calendar days will show it until you pause or delete the rule.</p>
+              </div>
+              <button onClick={createPplSchedule} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800">
+                <Repeat className="h-4 w-4" /> Build PPL x2
+              </button>
+            </div>
+
+            <form onSubmit={addRecurringSchedule} className="mt-5 grid gap-3 md:grid-cols-[160px_1fr_160px_160px_auto]">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-neutral-500">Day</span>
+                <select
+                  value={scheduleForm.dayOfWeek}
+                  onChange={(event) => setScheduleForm({ ...scheduleForm, dayOfWeek: Number(event.target.value) })}
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+                >
+                  {planDays.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-neutral-500">Workout/template</span>
+                <select
+                  value={scheduleForm.templateWorkoutId}
+                  onChange={(event) => setScheduleForm({ ...scheduleForm, templateWorkoutId: event.target.value })}
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+                  required
+                >
+                  <option value="">Choose workout</option>
+                  {workoutTemplates.map((workout) => (
+                    <option key={workout.id} value={workout.id}>{workout.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-neutral-500">Start date</span>
+                <input
+                  type="date"
+                  value={scheduleForm.startDate}
+                  onChange={(event) => setScheduleForm({ ...scheduleForm, startDate: event.target.value })}
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+                  required
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-neutral-500">End date</span>
+                <input
+                  type="date"
+                  value={scheduleForm.endDate}
+                  onChange={(event) => setScheduleForm({ ...scheduleForm, endDate: event.target.value })}
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:border-neutral-400"
+                />
+              </label>
+              <button type="submit" className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800 md:mt-6">
+                <CalendarPlus className="h-4 w-4" /> Add
+              </button>
+            </form>
+            {workoutTemplates.length === 0 && (
+              <p className="mt-3 text-sm text-neutral-500">Create or save a workout first, or use Build PPL x2 to create a starter recurring plan.</p>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Current Plan</p>
+            <div className="mt-4 space-y-2">
+              {recurringSchedules.length > 0 ? recurringSchedules.map((schedule) => (
+                <div key={schedule.id} className="rounded-xl border border-neutral-100 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-neutral-900">{weekdayLabels[schedule.dayOfWeek]} · {schedule.name}</p>
+                      <p className="mt-1 text-xs text-neutral-500">{schedule.muscleGroup || "Workout"} · starts {schedule.startDate}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => toggleRecurringSchedule(schedule)} className="rounded-lg px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
+                        {schedule.active ? "Pause" : "Resume"}
+                      </button>
+                      <button onClick={() => deleteRecurringSchedule(schedule)} className="rounded-lg p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600" aria-label={`Delete ${schedule.name}`}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-xl bg-neutral-50 p-4 text-center">
+                  <p className="text-sm font-medium text-neutral-900">No recurring plan yet</p>
+                  <p className="mt-1 text-xs text-neutral-500">Add a day manually or build Push/Pull/Legs twice per week.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
@@ -258,7 +518,35 @@ export default function CalendarPage() {
 
             {selectedHasEvents ? (
               <div className="space-y-2">
-                {selectedEvents.map((event, index) => (
+                {selectedEvents.map((event, index) => event.virtual ? (
+                  <button
+                    key={`${event.name}-${index}`}
+                    onClick={() => startRecurringEvent(event)}
+                    className="block w-full rounded-xl border border-neutral-200 p-4 text-left hover:border-neutral-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-neutral-900">{event.name}</p>
+                        <p className="text-xs text-neutral-500 mt-1">{event.muscleGroup} · recurring</p>
+                      </div>
+                      <span className="text-[11px] font-medium capitalize text-neutral-500">{event.type}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="font-semibold text-neutral-900">{event.exercises || event.workout?.exercises?.length || 0}</p>
+                        <p className="text-xs text-neutral-500">Exercises</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-neutral-900">{event.completedSets} / {event.plannedSets}</p>
+                        <p className="text-xs text-neutral-500">Sets completed</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
+                      <span>{formatDuration(event.duration)}</span>
+                      <span>Tap to start/log</span>
+                    </div>
+                  </button>
+                ) : (
                   <Link
                     key={`${event.name}-${index}`}
                     to={event.workout?.id ? `/workouts/${event.workout.id}` : "/workouts/new"}
@@ -287,12 +575,14 @@ export default function CalendarPage() {
                     </div>
                   </Link>
                 ))}
-                <button
-                  onClick={() => repeatNextWeek(selectedEvents[0])}
-                  className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-                >
-                  Repeat weekly
-                </button>
+                {selectedEvents.some((event) => !event.virtual) && (
+                  <button
+                    onClick={() => repeatNextWeek(selectedEvents.find((event) => !event.virtual))}
+                    className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                  >
+                    Repeat weekly
+                  </button>
+                )}
               </div>
             ) : (
               <div className="rounded-xl bg-neutral-50 p-5 text-center">
@@ -334,7 +624,7 @@ export default function CalendarPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-neutral-600">Missed planned workouts</span>
-                <span className="text-sm font-semibold text-neutral-900">{missedWorkouts}</span>
+                <span className="text-sm font-semibold text-neutral-900">{missedWorkouts + missedRecurring}</span>
               </div>
             </div>
           </div>

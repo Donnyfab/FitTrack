@@ -48,10 +48,12 @@ The schema creates:
 
 All tables have row-level security enabled. Users can only read or write rows tied to their own Supabase auth user ID.
 
-For the optional OpenAI edge function, set secrets in Supabase:
+For the optional AI edge function, set one provider secret in Supabase:
 
 ```bash
 supabase secrets set OPENAI_API_KEY=sk-...
+# or
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 supabase functions deploy openai-chat
 ```
 
@@ -62,6 +64,9 @@ Set these Vercel environment variables for Preview and Production:
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+ANTHROPIC_API_KEY=sk-ant-...
+# optional
+ANTHROPIC_MODEL=claude-sonnet-4-6
 ```
 
 The committed `vercel.json` uses:

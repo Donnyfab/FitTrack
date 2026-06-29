@@ -51,6 +51,32 @@ export async function chatCompletion(messages, options = {}) {
   return data;
 }
 
+function parseAIJson(content) {
+  const text = String(content || "").trim();
+  if (!text) {
+    throw new Error('Empty response from AI provider');
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const withoutFence = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    try {
+      return JSON.parse(withoutFence);
+    } catch {
+      const start = withoutFence.indexOf('{');
+      const end = withoutFence.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        return JSON.parse(withoutFence.slice(start, end + 1));
+      }
+      throw new Error('AI provider returned an unreadable plan');
+    }
+  }
+}
+
 export async function chatJSON(systemPrompt, userPrompt, options = {}) {
   const result = await chatCompletion(
     [
@@ -64,9 +90,5 @@ export async function chatJSON(systemPrompt, userPrompt, options = {}) {
   );
 
   const content = result?.content ?? result?.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('Empty response from AI provider');
-  }
-
-  return JSON.parse(content);
+  return parseAIJson(content);
 }

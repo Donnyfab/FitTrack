@@ -619,7 +619,7 @@ export default function AIPlan() {
                 <p className="mt-2 text-sm leading-relaxed text-neutral-600">{generatedPlan.summary}</p>
                 {usedFallback && (
                   <p className="mt-2 text-xs text-amber-700">
-                    AI was unavailable, so FitTrack generated a local starter plan. Check the OpenAI key on Supabase if this keeps happening.
+                    AI was unavailable, so FitTrack generated a local starter plan. Try again after the deployment finishes refreshing.
                   </p>
                 )}
               </div>

@@ -76,12 +76,20 @@ The committed `vercel.json` uses:
 - output directory: `dist`
 - SPA fallback rewrites to `index.html`
 
-In Supabase Auth settings, add your Vercel production URL and preview URL pattern to the allowed redirect URLs. At minimum include:
+In Supabase Auth settings, use the production site URL `https://fittrackr.biz` and add the custom domain plus preview URL pattern to the allowed redirect URLs. At minimum include:
 
 ```text
 http://localhost:5173/**
-https://your-production-domain.com/**
+https://fittrackr.biz/**
+https://www.fittrackr.biz/**
 https://*.vercel.app/**
+```
+
+For Google Calendar sync, add these Authorized JavaScript origins to the Google OAuth web client:
+
+```text
+https://fittrackr.biz
+https://www.fittrackr.biz
 ```
 
 ## PWA

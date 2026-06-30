@@ -353,6 +353,16 @@ export default function WorkoutDetail() {
     setRestRunning(true);
   };
 
+  const findNextIncompleteExerciseIndex = (exercises, completedExerciseIndex) => {
+    if (!exercises.length) return -1;
+    for (let offset = 1; offset <= exercises.length; offset += 1) {
+      const index = (completedExerciseIndex + offset) % exercises.length;
+      if (index === completedExerciseIndex) continue;
+      if ((exercises[index]?.sets || []).some((set) => !set.completed)) return index;
+    }
+    return -1;
+  };
+
   const toggleSet = (exerciseIndex, setIndex) => {
     const currentSet = loggedExercises[exerciseIndex]?.sets?.[setIndex];
     const willComplete = !currentSet?.completed;
@@ -372,10 +382,7 @@ export default function WorkoutDetail() {
       const completedExerciseIsDone =
         completedExerciseSets.length > 0 && completedExerciseSets.every((set) => set.completed);
       if (completedExerciseIsDone) {
-        const nextExerciseIndex = nextExercises.findIndex(
-          (exercise, currentExerciseIndex) =>
-            currentExerciseIndex > exerciseIndex && (exercise.sets || []).some((set) => !set.completed)
-        );
+        const nextExerciseIndex = findNextIncompleteExerciseIndex(nextExercises, exerciseIndex);
         setExpandedExercises((current) => {
           const next = new Set(current);
           next.delete(exerciseIndex);

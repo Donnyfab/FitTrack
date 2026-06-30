@@ -368,6 +368,29 @@ export default function WorkoutDetail() {
     );
     setLoggedExercises(nextExercises);
     if (willComplete) {
+      const completedExerciseSets = nextExercises[exerciseIndex]?.sets || [];
+      const completedExerciseIsDone =
+        completedExerciseSets.length > 0 && completedExerciseSets.every((set) => set.completed);
+      if (completedExerciseIsDone) {
+        const nextExerciseIndex = nextExercises.findIndex(
+          (exercise, currentExerciseIndex) =>
+            currentExerciseIndex > exerciseIndex && (exercise.sets || []).some((set) => !set.completed)
+        );
+        setExpandedExercises((current) => {
+          const next = new Set(current);
+          next.delete(exerciseIndex);
+          if (nextExerciseIndex !== -1) next.add(nextExerciseIndex);
+          return next;
+        });
+        if (nextExerciseIndex !== -1) {
+          const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+          window.setTimeout(() => {
+            document
+              .getElementById(`exercise-card-${nextExerciseIndex}`)
+              ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+          }, reduceMotion ? 0 : 260);
+        }
+      }
       primeRestTimerAlert();
       const nextRestSeconds = Math.min(600, Math.max(15, Number(currentSet?.restSeconds) || restDurationSeconds));
       setRestDurationSeconds(nextRestSeconds);
@@ -818,6 +841,7 @@ export default function WorkoutDetail() {
       <div className="space-y-3">
         {loggedExercises.map((exercise, exerciseIndex) => {
           const exerciseKey = getExerciseKey(exercise, exerciseIndex);
+          const isExpanded = expandedExercises.has(exerciseIndex);
           const swipeOffset =
             exerciseSwipeState?.exerciseKey === exerciseKey
               ? exerciseSwipeState.deltaX
@@ -828,6 +852,7 @@ export default function WorkoutDetail() {
           return (
           <div
             key={exerciseKey}
+            id={`exercise-card-${exerciseIndex}`}
             className="relative overflow-hidden rounded-2xl"
             onTouchStart={(event) => handleExerciseSwipeStart(event, exerciseKey)}
             onTouchMove={(event) => handleExerciseSwipeMove(event, exerciseKey)}
@@ -857,7 +882,6 @@ export default function WorkoutDetail() {
               const pr = prByExercise.get(exercise.name);
               const setCount = (exercise.sets || []).length;
               const completedExerciseSets = (exercise.sets || []).filter((set) => set.completed).length;
-              const isExpanded = expandedExercises.has(exerciseIndex);
               return (
                 <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3">
                   <button
@@ -893,8 +917,15 @@ export default function WorkoutDetail() {
                 </div>
               );
             })()}
-            {expandedExercises.has(exerciseIndex) && (
-              <div id={`exercise-sets-${exerciseIndex}`}>
+            <div
+              id={`exercise-sets-${exerciseIndex}`}
+              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+                isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+              }`}
+              aria-hidden={!isExpanded}
+              inert={isExpanded ? undefined : ""}
+            >
+              <div className="overflow-hidden">
                 <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem] gap-2 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   <span>Set</span>
                   <span>Weight</span>
@@ -970,7 +1001,7 @@ export default function WorkoutDetail() {
                   )}
                 </div>
               </div>
-            )}
+            </div>
           </div>
           </div>
           );

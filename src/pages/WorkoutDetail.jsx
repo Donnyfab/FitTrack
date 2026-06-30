@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
@@ -75,6 +75,7 @@ export default function WorkoutDetail() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [saveState, setSaveState] = useState("saved");
   const [finishSummary, setFinishSummary] = useState(null);
+  const restAlertAudioContextRef = useRef(null);
 
   useEffect(() => {
     loadWorkout();
@@ -115,6 +116,7 @@ export default function WorkoutDetail() {
       setRestSeconds((value) => {
         if (value <= 1) {
           setRestRunning(false);
+          playRestTimerAlert();
           return 0;
         }
         return value - 1;
@@ -158,6 +160,64 @@ export default function WorkoutDetail() {
     }
   };
 
+  const getRestTimerAudioContext = () => {
+    if (typeof window === "undefined") return null;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!restAlertAudioContextRef.current) {
+      restAlertAudioContextRef.current = new AudioContextClass();
+    }
+    return restAlertAudioContextRef.current;
+  };
+
+  const primeRestTimerAlert = () => {
+    try {
+      const audioContext = getRestTimerAudioContext();
+      if (!audioContext) return;
+      if (audioContext.state === "suspended") audioContext.resume();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.025);
+    } catch {
+      // Sound alerts are best-effort; the timer still works if the browser blocks audio.
+    }
+  };
+
+  const playRestTimerAlert = () => {
+    if (typeof window === "undefined") return;
+    try {
+      window.navigator?.vibrate?.([180, 70, 180, 70, 240]);
+    } catch {
+      // Ignore unsupported vibration APIs.
+    }
+    try {
+      const audioContext = getRestTimerAudioContext();
+      if (!audioContext) return;
+      if (audioContext.state === "suspended") audioContext.resume();
+      const now = audioContext.currentTime;
+      [0, 0.22, 0.44].forEach((offset) => {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(880, now + offset);
+        gain.gain.setValueAtTime(0.0001, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(now + offset);
+        oscillator.stop(now + offset + 0.18);
+      });
+    } catch {
+      // Audio is optional because browser autoplay rules can still block it.
+    }
+  };
+
   const handleDelete = async () => {
     if (!window.confirm("Delete this workout? This cannot be undone.")) return;
     await base44.entities.Workout.delete(id);
@@ -192,6 +252,7 @@ export default function WorkoutDetail() {
   };
 
   const startRestTimer = () => {
+    primeRestTimerAlert();
     if (restSeconds <= 0) setRestSeconds(restDurationSeconds);
     setRestRunning(true);
   };
@@ -199,6 +260,7 @@ export default function WorkoutDetail() {
   const stopRestTimer = () => setRestRunning(false);
 
   const restartRestTimer = () => {
+    primeRestTimerAlert();
     setRestSeconds(restDurationSeconds);
     setRestRunning(true);
   };
@@ -218,6 +280,7 @@ export default function WorkoutDetail() {
     );
     setLoggedExercises(nextExercises);
     if (willComplete) {
+      primeRestTimerAlert();
       const nextRestSeconds = Math.min(600, Math.max(15, Number(currentSet?.restSeconds) || restDurationSeconds));
       setRestDurationSeconds(nextRestSeconds);
       setRestSeconds(nextRestSeconds);

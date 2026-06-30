@@ -4,7 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MUSCLE_GROUPS } from "@/lib/constants";
-import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises, writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
+import { clearSelectedWorkoutExercises, readSelectedWorkoutExercises } from "@/lib/workoutSelection";
 import { clearWorkoutDraft, readWorkoutDraft, writeWorkoutDraft } from "@/lib/trainingInsights";
 import { ArrowLeft, CalendarDays, Check, ChevronDown, Repeat, X, Trash2 } from "lucide-react";
 
@@ -155,7 +155,7 @@ export default function WorkoutForm() {
   });
   const addExercise = () => {
     writeWorkoutDraft(currentDraft());
-    writeSelectedWorkoutExercises(exercises.map((exercise) => exercise.name).filter(Boolean));
+    clearSelectedWorkoutExercises();
     navigate("/exercise?mode=workout-builder");
   };
   const removeExercise = (idx) => setExercises(exercises.filter((_, i) => i !== idx));

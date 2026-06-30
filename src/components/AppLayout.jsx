@@ -235,21 +235,10 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      {showExpandedRestTimer && (
-        <button
-          type="button"
-          aria-label="Collapse rest timer"
-          onClick={collapseRestTimer}
-          className={`fixed inset-0 z-30 bg-neutral-950/10 backdrop-blur-[14px] transition-opacity duration-300 ease-out motion-reduce:transition-none ${
-            restTimerClosing ? "opacity-0" : "opacity-100"
-          }`}
-        />
-      )}
-
       <header
-        className={`lg:hidden sticky top-0 z-40 transition-[background-color,border-color,box-shadow] duration-300 ease-out ${
+        className={`lg:hidden sticky top-0 z-40 isolate transition-[background-color,border-color,box-shadow,backdrop-filter] duration-300 ease-out ${
           showExpandedRestTimer
-            ? "border-b border-transparent bg-transparent shadow-none"
+            ? "border-b border-white/45 bg-white/72 shadow-[0_18px_42px_-34px_rgba(29,29,31,0.55)] backdrop-blur-xl"
             : "border-b border-white/60 bg-white/78 shadow-[0_14px_38px_-34px_rgba(29,29,31,0.65)] backdrop-blur-2xl"
         }`}
       >
@@ -424,9 +413,7 @@ export default function AppLayout() {
       </main>
 
       <nav
-        className={`lg:hidden fixed inset-x-0 bottom-0 border-t border-neutral-200/70 bg-white/82 backdrop-blur-2xl shadow-[0_-12px_34px_-30px_rgba(29,29,31,0.75)] ${
-          showExpandedRestTimer ? "z-20" : "z-40"
-        }`}
+        className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200/70 bg-white/82 backdrop-blur-2xl shadow-[0_-12px_34px_-30px_rgba(29,29,31,0.75)]"
       >
         <div className="grid grid-cols-5 h-[calc(3.9rem+env(safe-area-inset-bottom))] px-2 pt-1 pb-[env(safe-area-inset-bottom)]">
           {mobileNavItems.map((item) => (

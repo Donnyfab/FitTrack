@@ -50,6 +50,8 @@ const parseTimerInput = (value) => {
   return Number.isFinite(minutes) ? Math.max(1, Math.round(minutes * 60)) : null;
 };
 
+const REST_TIMER_ALERT_SRC = "/sounds/rest-timer-alert.wav";
+
 export default function WorkoutDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -75,7 +77,23 @@ export default function WorkoutDetail() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [saveState, setSaveState] = useState("saved");
   const [finishSummary, setFinishSummary] = useState(null);
+  const restAlertAudioRef = useRef(null);
+  const restAlertUnlockedRef = useRef(false);
   const restAlertAudioContextRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const audio = new Audio(REST_TIMER_ALERT_SRC);
+    audio.preload = "auto";
+    audio.volume = 1;
+    audio.setAttribute("playsinline", "true");
+    restAlertAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      restAlertAudioRef.current = null;
+      restAlertUnlockedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     loadWorkout();
@@ -170,7 +188,19 @@ export default function WorkoutDetail() {
     return restAlertAudioContextRef.current;
   };
 
-  const primeRestTimerAlert = () => {
+  const getRestTimerAudioElement = () => {
+    if (typeof window === "undefined") return null;
+    if (!restAlertAudioRef.current) {
+      const audio = new Audio(REST_TIMER_ALERT_SRC);
+      audio.preload = "auto";
+      audio.volume = 1;
+      audio.setAttribute("playsinline", "true");
+      restAlertAudioRef.current = audio;
+    }
+    return restAlertAudioRef.current;
+  };
+
+  const primeGeneratedRestTimerAlert = () => {
     try {
       const audioContext = getRestTimerAudioContext();
       if (!audioContext) return;
@@ -188,6 +218,68 @@ export default function WorkoutDetail() {
     }
   };
 
+  const playGeneratedRestTimerAlert = () => {
+    try {
+      const audioContext = getRestTimerAudioContext();
+      if (!audioContext) return;
+      if (audioContext.state === "suspended") audioContext.resume();
+      const now = audioContext.currentTime;
+      [0, 0.22, 0.44].forEach((offset, index) => {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(index === 2 ? 1046.5 : 880, now + offset);
+        gain.gain.setValueAtTime(0.0001, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.2, now + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + (index === 2 ? 0.34 : 0.16));
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(now + offset);
+        oscillator.stop(now + offset + (index === 2 ? 0.36 : 0.18));
+      });
+    } catch {
+      // Audio is optional because browser autoplay rules can still block it.
+    }
+  };
+
+  const primeRestTimerAlert = () => {
+    const audio = getRestTimerAudioElement();
+    if (audio && !restAlertUnlockedRef.current) {
+      const previousMuted = audio.muted;
+      const previousVolume = audio.volume;
+      try {
+        audio.muted = true;
+        audio.volume = 0;
+        audio.currentTime = 0;
+        const playPromise = audio.play();
+        if (playPromise?.then) {
+          playPromise
+            .then(() => {
+              audio.pause();
+              audio.currentTime = 0;
+              audio.muted = previousMuted;
+              audio.volume = previousVolume || 1;
+              restAlertUnlockedRef.current = true;
+            })
+            .catch(() => {
+              audio.muted = previousMuted;
+              audio.volume = previousVolume || 1;
+            });
+        } else {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = previousMuted;
+          audio.volume = previousVolume || 1;
+          restAlertUnlockedRef.current = true;
+        }
+      } catch {
+        audio.muted = previousMuted;
+        audio.volume = previousVolume || 1;
+      }
+    }
+    primeGeneratedRestTimerAlert();
+  };
+
   const playRestTimerAlert = () => {
     if (typeof window === "undefined") return;
     try {
@@ -195,26 +287,22 @@ export default function WorkoutDetail() {
     } catch {
       // Ignore unsupported vibration APIs.
     }
+    const audio = getRestTimerAudioElement();
+    if (!audio) {
+      playGeneratedRestTimerAlert();
+      return;
+    }
     try {
-      const audioContext = getRestTimerAudioContext();
-      if (!audioContext) return;
-      if (audioContext.state === "suspended") audioContext.resume();
-      const now = audioContext.currentTime;
-      [0, 0.22, 0.44].forEach((offset) => {
-        const oscillator = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        oscillator.type = "square";
-        oscillator.frequency.setValueAtTime(880, now + offset);
-        gain.gain.setValueAtTime(0.0001, now + offset);
-        gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
-        oscillator.connect(gain);
-        gain.connect(audioContext.destination);
-        oscillator.start(now + offset);
-        oscillator.stop(now + offset + 0.18);
-      });
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = false;
+      audio.volume = 1;
+      const playPromise = audio.play();
+      if (playPromise?.catch) {
+        playPromise.catch(() => playGeneratedRestTimerAlert());
+      }
     } catch {
-      // Audio is optional because browser autoplay rules can still block it.
+      playGeneratedRestTimerAlert();
     }
   };
 

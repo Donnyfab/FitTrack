@@ -26,7 +26,6 @@ import {
   RotateCcw,
   Search,
   Star,
-  TimerReset,
   Trophy,
   Trash2,
   X,
@@ -36,18 +35,6 @@ const formatTimer = (seconds) => {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
-};
-
-const parseTimerInput = (value) => {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return null;
-  if (trimmed.includes(":")) {
-    const [minutes, seconds] = trimmed.split(":").map((part) => Number(part));
-    if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds < 0 || seconds > 59) return null;
-    return Math.max(1, Math.round(minutes * 60 + seconds));
-  }
-  const minutes = Number(trimmed);
-  return Number.isFinite(minutes) ? Math.max(1, Math.round(minutes * 60)) : null;
 };
 
 const REST_TIMER_ALERT_SRC = "/sounds/rest-timer-alert.wav";
@@ -66,7 +53,10 @@ export default function WorkoutDetail() {
   const [restDurationSeconds, setRestDurationSeconds] = useState(defaultRestSeconds);
   const [restSeconds, setRestSeconds] = useState(defaultRestSeconds);
   const [restRunning, setRestRunning] = useState(false);
-  const [customRestInput, setCustomRestInput] = useState(formatTimer(defaultRestSeconds));
+  const [restHeaderContext, setRestHeaderContext] = useState({ afterExerciseName: "", nextExerciseName: "" });
+  const [restTarget, setRestTarget] = useState(null);
+  const [completedExerciseFlashIndex, setCompletedExerciseFlashIndex] = useState(null);
+  const [restTargetFlash, setRestTargetFlash] = useState(null);
   const [favoriteExercises, setFavoriteExercises] = useState([]);
   const [availableExercises, setAvailableExercises] = useState(exerciseCatalog);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
@@ -80,6 +70,17 @@ export default function WorkoutDetail() {
   const restAlertAudioRef = useRef(null);
   const restAlertUnlockedRef = useRef(false);
   const restAlertAudioContextRef = useRef(null);
+  const restTargetRef = useRef(null);
+  const completedExerciseFlashTimeoutRef = useRef(null);
+  const restTargetFlashTimeoutRef = useRef(null);
+
+  const flashRestTarget = () => {
+    const target = restTargetRef.current;
+    if (!target) return;
+    window.clearTimeout(restTargetFlashTimeoutRef.current);
+    setRestTargetFlash(target);
+    restTargetFlashTimeoutRef.current = window.setTimeout(() => setRestTargetFlash(null), 2400);
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -125,8 +126,11 @@ export default function WorkoutDetail() {
   useEffect(() => {
     setRestDurationSeconds(defaultRestSeconds);
     setRestSeconds(defaultRestSeconds);
-    setCustomRestInput(formatTimer(defaultRestSeconds));
   }, [defaultRestSeconds]);
+
+  useEffect(() => {
+    restTargetRef.current = restTarget;
+  }, [restTarget]);
 
   useEffect(() => {
     if (!restRunning) return undefined;
@@ -135,6 +139,7 @@ export default function WorkoutDetail() {
         if (value <= 1) {
           setRestRunning(false);
           playRestTimerAlert();
+          flashRestTarget();
           return 0;
         }
         return value - 1;
@@ -142,6 +147,14 @@ export default function WorkoutDetail() {
     }, 1000);
     return () => window.clearInterval(interval);
   }, [restRunning]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    return () => {
+      window.clearTimeout(completedExerciseFlashTimeoutRef.current);
+      window.clearTimeout(restTargetFlashTimeoutRef.current);
+    };
+  }, []);
 
   const loadWorkout = async () => {
     try {
@@ -329,14 +342,7 @@ export default function WorkoutDetail() {
   const setRestDuration = (seconds) => {
     setRestDurationSeconds(seconds);
     setRestSeconds(seconds);
-    setCustomRestInput(formatTimer(seconds));
     setRestRunning(false);
-  };
-
-  const applyCustomRestTime = () => {
-    const parsed = parseTimerInput(customRestInput);
-    if (!parsed) return;
-    setRestDuration(parsed);
   };
 
   const startRestTimer = () => {
@@ -347,11 +353,68 @@ export default function WorkoutDetail() {
 
   const stopRestTimer = () => setRestRunning(false);
 
+  const skipRestTimer = () => {
+    setRestRunning(false);
+    setRestSeconds(0);
+    flashRestTarget();
+  };
+
+  const addRestSeconds = (seconds) => {
+    const amount = Math.max(1, Number(seconds) || 0);
+    setRestSeconds((value) => {
+      const nextSeconds = Math.min(900, Math.max(0, value) + amount);
+      setRestDurationSeconds((duration) => Math.max(duration, nextSeconds));
+      return nextSeconds;
+    });
+  };
+
   const restartRestTimer = () => {
     primeRestTimerAlert();
     setRestSeconds(restDurationSeconds);
     setRestRunning(true);
   };
+
+  useEffect(() => {
+    const handleRestTimerAction = (event) => {
+      const { action, seconds } = event.detail || {};
+      if (action === "toggle") {
+        if (restRunning) {
+          stopRestTimer();
+        } else {
+          startRestTimer();
+        }
+      }
+      if (action === "skip") skipRestTimer();
+      if (action === "add-seconds") addRestSeconds(seconds);
+      if (action === "restart") restartRestTimer();
+    };
+
+    window.addEventListener("fittrack:rest-timer-action", handleRestTimerAction);
+    return () => window.removeEventListener("fittrack:rest-timer-action", handleRestTimerAction);
+  }, [restRunning, restSeconds, restDurationSeconds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !workout) return;
+    window.dispatchEvent(
+      new CustomEvent("fittrack:rest-timer-header", {
+        detail: {
+          visible: true,
+          seconds: restSeconds,
+          durationSeconds: restDurationSeconds,
+          running: restRunning,
+          afterExerciseName: restHeaderContext.afterExerciseName,
+          nextExerciseName: restHeaderContext.nextExerciseName,
+        },
+      })
+    );
+  }, [workout, restSeconds, restDurationSeconds, restRunning, restHeaderContext.afterExerciseName, restHeaderContext.nextExerciseName]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    return () => {
+      window.dispatchEvent(new CustomEvent("fittrack:rest-timer-header", { detail: { visible: false } }));
+    };
+  }, []);
 
   const findNextIncompleteExerciseIndex = (exercises, completedExerciseIndex) => {
     if (!exercises.length) return -1;
@@ -361,6 +424,22 @@ export default function WorkoutDetail() {
       if ((exercises[index]?.sets || []).some((set) => !set.completed)) return index;
     }
     return -1;
+  };
+
+  const findFirstIncompleteSetIndex = (exercise) => (exercise?.sets || []).findIndex((set) => !set.completed);
+
+  const findNextRestTarget = (exercises, currentExerciseIndex) => {
+    const sameExerciseSetIndex = findFirstIncompleteSetIndex(exercises[currentExerciseIndex]);
+    if (sameExerciseSetIndex !== -1) {
+      return { exerciseIndex: currentExerciseIndex, setIndex: sameExerciseSetIndex };
+    }
+
+    const nextExerciseIndex = findNextIncompleteExerciseIndex(exercises, currentExerciseIndex);
+    if (nextExerciseIndex === -1) return null;
+    return {
+      exerciseIndex: nextExerciseIndex,
+      setIndex: Math.max(0, findFirstIncompleteSetIndex(exercises[nextExerciseIndex])),
+    };
   };
 
   const toggleSet = (exerciseIndex, setIndex) => {
@@ -378,6 +457,18 @@ export default function WorkoutDetail() {
     );
     setLoggedExercises(nextExercises);
     if (willComplete) {
+      const nextRestTarget = findNextRestTarget(nextExercises, exerciseIndex);
+      setRestTarget(nextRestTarget);
+      setRestHeaderContext({
+        afterExerciseName: nextExercises[exerciseIndex]?.name || "",
+        nextExerciseName: nextRestTarget ? nextExercises[nextRestTarget.exerciseIndex]?.name || "" : "Finish workout",
+      });
+      window.clearTimeout(completedExerciseFlashTimeoutRef.current);
+      setCompletedExerciseFlashIndex(exerciseIndex);
+      completedExerciseFlashTimeoutRef.current = window.setTimeout(() => {
+        setCompletedExerciseFlashIndex(null);
+      }, 1600);
+
       const completedExerciseSets = nextExercises[exerciseIndex]?.sets || [];
       const completedExerciseIsDone =
         completedExerciseSets.length > 0 && completedExerciseSets.every((set) => set.completed);
@@ -402,7 +493,6 @@ export default function WorkoutDetail() {
       const nextRestSeconds = Math.min(600, Math.max(15, Number(currentSet?.restSeconds) || restDurationSeconds));
       setRestDurationSeconds(nextRestSeconds);
       setRestSeconds(nextRestSeconds);
-      setCustomRestInput(formatTimer(nextRestSeconds));
       setRestRunning(true);
     }
     saveExercises(nextExercises);
@@ -761,64 +851,7 @@ export default function WorkoutDetail() {
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1.4fr_0.8fr_0.8fr]">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Rest timer</p>
-            <TimerReset className="w-4 h-4 text-neutral-300" />
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-3xl font-semibold text-neutral-900">{formatTimer(restSeconds)}</p>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={startRestTimer} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800">
-                <Play className="w-3.5 h-3.5 fill-current" />
-                Start
-              </button>
-              <button onClick={stopRestTimer} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
-                <Pause className="w-3.5 h-3.5" />
-                Stop
-              </button>
-              <button onClick={restartRestTimer} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
-                <RotateCcw className="w-3.5 h-3.5" />
-                Restart
-              </button>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[60, 120, 180, 240, 300].map((seconds) => (
-              <button
-                key={seconds}
-                onClick={() => setRestDuration(seconds)}
-                className={`h-8 rounded-lg px-3 text-xs font-semibold transition-colors ${
-                  restDurationSeconds === seconds
-                    ? "bg-neutral-900 text-white"
-                    : "border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
-                }`}
-              >
-                {seconds / 60}m
-              </button>
-            ))}
-            <div className="flex h-8 items-center overflow-hidden rounded-lg border border-neutral-200 bg-white">
-              <input
-                value={customRestInput}
-                onChange={(event) => setCustomRestInput(event.target.value)}
-                onBlur={applyCustomRestTime}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    applyCustomRestTime();
-                  }
-                }}
-                placeholder="1:57"
-                className="h-full w-16 px-2 text-xs font-medium text-neutral-900 outline-none"
-                aria-label="Custom rest timer"
-              />
-              <button onClick={applyCustomRestTime} className="h-full border-l border-neutral-200 px-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-50">
-                Set
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="bg-white rounded-2xl border border-neutral-200 p-4">
           <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">Exercises</p>
           <p className="text-2xl font-semibold text-neutral-900">{exerciseCount}</p>
@@ -856,6 +889,8 @@ export default function WorkoutDetail() {
                 ? -92
                 : 0;
           const deleteVisible = swipeOffset < -8 || swipedExerciseKey === exerciseKey;
+          const exerciseIsFlashing = completedExerciseFlashIndex === exerciseIndex;
+          const exerciseIsRestTarget = restTargetFlash?.exerciseIndex === exerciseIndex;
           return (
           <div
             key={exerciseKey}
@@ -878,7 +913,13 @@ export default function WorkoutDetail() {
               Delete
             </button>
             <div
-              className="relative z-10 overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-transform duration-200 ease-out"
+              className={`relative z-10 overflow-hidden rounded-2xl border bg-white transition-[transform,border-color,box-shadow] duration-300 ease-out ${
+                exerciseIsRestTarget
+                  ? "border-blue-300 shadow-[0_18px_42px_-30px_rgba(37,99,235,0.95)]"
+                  : exerciseIsFlashing
+                    ? "border-blue-200 shadow-[0_14px_34px_-30px_rgba(37,99,235,0.75)]"
+                    : "border-neutral-200"
+              }`}
               style={{ transform: `translateX(${swipeOffset}px)` }}
             >
             {(() => {
@@ -944,7 +985,11 @@ export default function WorkoutDetail() {
                     <div
                       key={setIndex}
                       className={`grid grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem] items-center gap-2 px-4 py-3 transition-colors ${
-                        set.completed ? "bg-neutral-50/90" : ""
+                        restTargetFlash?.exerciseIndex === exerciseIndex && restTargetFlash?.setIndex === setIndex
+                          ? "bg-blue-50/80"
+                          : set.completed
+                            ? "bg-neutral-50/90"
+                            : ""
                       }`}
                     >
                       <div className={`min-w-0 text-sm text-neutral-500 ${set.completed ? "line-through decoration-2 opacity-55" : ""}`}>

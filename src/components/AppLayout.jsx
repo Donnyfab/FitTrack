@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, NavLink, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { getUserFirstName } from "@/lib/userDisplay";
@@ -12,6 +12,13 @@ import {
   Settings as SettingsIcon,
   LogOut,
   CirclePlus,
+  ChevronUp,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  SkipForward,
+  X,
 } from "lucide-react";
 
 const navItems = [
@@ -39,12 +46,102 @@ const profileLinks = [
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
 ];
 
+const formatHeaderTimer = (seconds) => {
+  const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const rest = safeSeconds % 60;
+  return `${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`;
+};
+
+function RestProgressRing({ seconds = 0, duration = 1, size = 36, strokeWidth = 3 }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = Math.max(0, Math.min(1, Number(seconds) / Math.max(1, Number(duration) || 1)));
+  const dashOffset = circumference * (1 - progress);
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="text-neutral-100"
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={dashOffset}
+        className="text-blue-600 transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </svg>
+  );
+}
+
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [restTimerHeader, setRestTimerHeader] = useState(null);
+  const [restTimerExpanded, setRestTimerExpanded] = useState(false);
   const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
   const avatarUrl = user?.avatar_url;
+  const restTimerSeconds = Math.max(0, Number(restTimerHeader?.seconds) || 0);
+  const restTimerDuration = Math.max(1, Number(restTimerHeader?.durationSeconds) || restTimerSeconds || 1);
+  const restTimerTime = formatHeaderTimer(restTimerSeconds);
+  const restTimerStatus = restTimerHeader?.afterExerciseName
+    ? `Resting after ${restTimerHeader.afterExerciseName}`
+    : "Rest timer ready";
+  const restTimerNext = restTimerHeader?.nextExerciseName
+    ? `Next: ${restTimerHeader.nextExerciseName}`
+    : "Next set is ready";
+  const restTimerActions = useMemo(
+    () => [
+      {
+        action: "toggle",
+        label: restTimerHeader?.running ? "Pause" : "Resume",
+        icon: restTimerHeader?.running ? Pause : Play,
+        primary: true,
+      },
+      { action: "skip", label: "Skip Rest", icon: SkipForward },
+      { action: "add-seconds", label: "+15s", icon: Plus, seconds: 15 },
+      { action: "add-seconds", label: "+30s", icon: Plus, seconds: 30 },
+      { action: "restart", label: "Restart", icon: RotateCcw },
+    ],
+    [restTimerHeader?.running]
+  );
+
+  useEffect(() => {
+    const handleRestTimerHeader = (event) => {
+      const detail = event.detail || {};
+      if (!detail.visible) {
+        setRestTimerHeader(null);
+        setRestTimerExpanded(false);
+        return;
+      }
+      setRestTimerHeader(detail);
+      if (!detail.running && Number(detail.seconds) <= 0) {
+        setRestTimerExpanded(false);
+      }
+    };
+
+    window.addEventListener("fittrack:rest-timer-header", handleRestTimerHeader);
+    return () => window.removeEventListener("fittrack:rest-timer-header", handleRestTimerHeader);
+  }, []);
+
+  const dispatchRestTimerAction = (action, payload = {}) => {
+    window.dispatchEvent(new CustomEvent("fittrack:rest-timer-action", { detail: { action, ...payload } }));
+    if (action === "skip") setRestTimerExpanded(false);
+  };
 
   return (
     <div className="min-h-screen text-neutral-900">
@@ -109,7 +206,7 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <header className="lg:hidden sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-white/60">
+      <header className="lg:hidden sticky top-0 z-40 bg-white/78 backdrop-blur-2xl border-b border-white/60 shadow-[0_14px_38px_-34px_rgba(29,29,31,0.65)]">
         <div className="flex items-center justify-between px-5 h-14">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-neutral-900 rounded-2xl flex items-center justify-center">
@@ -119,6 +216,25 @@ export default function AppLayout() {
               FitTrack
             </span>
           </div>
+          {restTimerHeader && (
+            <button
+              type="button"
+              onClick={() => setRestTimerExpanded((value) => !value)}
+              className="mx-2 inline-flex min-w-0 flex-1 max-w-[9.5rem] items-center justify-center gap-2 rounded-full border border-white/80 bg-white/88 px-2.5 py-1.5 text-left shadow-[0_10px_30px_-24px_rgba(29,29,31,0.7)] transition-all duration-300 ease-out active:scale-[0.98] motion-reduce:transition-none"
+              aria-expanded={restTimerExpanded}
+              aria-label="Open rest timer controls"
+            >
+              <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center text-blue-600">
+                <RestProgressRing seconds={restTimerSeconds} duration={restTimerDuration} size={28} strokeWidth={2.5} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[9px] font-bold uppercase tracking-[0.14em] text-neutral-400">
+                  Rest Time
+                </span>
+                <span className="block text-sm font-semibold leading-none text-neutral-900">{restTimerTime}</span>
+              </span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setProfileOpen((value) => !value)}
@@ -162,6 +278,73 @@ export default function AppLayout() {
             </div>
           )}
         </div>
+        {restTimerHeader && (
+          <div
+            className={`grid px-3 transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
+              restTimerExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
+            }`}
+          >
+            <div className="overflow-hidden">
+              <div className="mb-3 rounded-[1.65rem] border border-white/80 bg-white/95 p-4 shadow-[0_24px_55px_-36px_rgba(29,29,31,0.9)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center text-blue-600">
+                      <RestProgressRing seconds={restTimerSeconds} duration={restTimerDuration} size={62} strokeWidth={4} />
+                      <span className="absolute text-[10px] font-bold uppercase tracking-[0.12em] text-blue-600">
+                        Rest
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-400">Rest Time</p>
+                      <p className="mt-0.5 text-4xl font-semibold leading-none tracking-tight text-neutral-950">
+                        {restTimerTime}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRestTimerExpanded(false)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 transition-colors hover:bg-neutral-200 hover:text-neutral-900"
+                    aria-label="Collapse rest timer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-neutral-50 px-3 py-2">
+                  <p className="truncate text-sm font-medium text-neutral-900">{restTimerStatus}</p>
+                  <p className="mt-0.5 truncate text-sm text-neutral-500">{restTimerNext}</p>
+                </div>
+
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                  {restTimerActions.map((item) => (
+                    <button
+                      key={`${item.action}-${item.seconds || item.label}`}
+                      type="button"
+                      onClick={() => dispatchRestTimerAction(item.action, { seconds: item.seconds })}
+                      className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors ${
+                        item.primary
+                          ? "bg-blue-600 text-white shadow-[0_12px_28px_-18px_rgba(37,99,235,0.9)]"
+                          : "bg-white text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50"
+                      }`}
+                    >
+                      <item.icon className={`h-4 w-4 ${item.action === "toggle" && !restTimerHeader.running ? "fill-current" : ""}`} />
+                      {item.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setRestTimerExpanded(false)}
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-white px-3 text-sm font-semibold text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50"
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                    Collapse
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="lg:ml-72 min-h-screen">

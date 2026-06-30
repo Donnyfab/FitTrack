@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react";
 
-const REST_TIMER_ALERT_SRC = "/sounds/rest-timer-alert.wav";
+const REST_TIMER_ALERT_SRC = "/sounds/rest-timer-countdown.mp3";
 
 const triggerWorkoutHaptic = (pattern = 16) => {
   if (typeof window === "undefined") return;
@@ -45,6 +45,7 @@ export default function WorkoutDetail() {
   const [allWorkouts, setAllWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const defaultRestSeconds = Number(settings?.default_rest_timer_seconds) || 90;
+  const restTimerSoundsEnabled = settings?.rest_timer_sounds_enabled ?? true;
   const [restDurationSeconds, setRestDurationSeconds] = useState(defaultRestSeconds);
   const [restSeconds, setRestSeconds] = useState(defaultRestSeconds);
   const [restRunning, setRestRunning] = useState(false);
@@ -64,6 +65,8 @@ export default function WorkoutDetail() {
   const restAlertAudioRef = useRef(null);
   const restAlertUnlockedRef = useRef(false);
   const restAlertAudioContextRef = useRef(null);
+  const restWarningPlayedRef = useRef(false);
+  const restRunningRef = useRef(false);
   const restTargetRef = useRef(null);
   const completedExerciseFlashTimeoutRef = useRef(null);
   const restTargetFlashTimeoutRef = useRef(null);
@@ -75,20 +78,6 @@ export default function WorkoutDetail() {
     setRestTargetFlash(target);
     restTargetFlashTimeoutRef.current = window.setTimeout(() => setRestTargetFlash(null), 2400);
   };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const audio = new Audio(REST_TIMER_ALERT_SRC);
-    audio.preload = "auto";
-    audio.volume = 1;
-    audio.setAttribute("playsinline", "true");
-    restAlertAudioRef.current = audio;
-    return () => {
-      audio.pause();
-      restAlertAudioRef.current = null;
-      restAlertUnlockedRef.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     loadWorkout();
@@ -104,26 +93,37 @@ export default function WorkoutDetail() {
   }, [restTarget]);
 
   useEffect(() => {
+    restRunningRef.current = restRunning;
+  }, [restRunning]);
+
+  useEffect(() => {
     if (!restRunning) return undefined;
     const interval = window.setInterval(() => {
       setRestSeconds((value) => {
         if (value <= 1) {
+          restRunningRef.current = false;
           setRestRunning(false);
-          playRestTimerAlert();
           flashRestTarget();
           return 0;
         }
-        return value - 1;
+        const nextValue = value - 1;
+        if (nextValue === 5 && restTimerSoundsEnabled && restRunningRef.current && !restWarningPlayedRef.current) {
+          restWarningPlayedRef.current = true;
+          playRestTimerAlert();
+        }
+        return nextValue;
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [restRunning]);
+  }, [restRunning, restTimerSoundsEnabled]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     return () => {
       window.clearTimeout(completedExerciseFlashTimeoutRef.current);
       window.clearTimeout(restTargetFlashTimeoutRef.current);
+      restAlertAudioRef.current?.pause();
+      restAlertAudioRef.current = null;
     };
   }, []);
 
@@ -227,6 +227,7 @@ export default function WorkoutDetail() {
   };
 
   const primeRestTimerAlert = () => {
+    if (!restTimerSoundsEnabled) return;
     const audio = getRestTimerAudioElement();
     if (audio && !restAlertUnlockedRef.current) {
       const previousMuted = audio.muted;
@@ -265,7 +266,7 @@ export default function WorkoutDetail() {
   };
 
   const playRestTimerAlert = () => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !restTimerSoundsEnabled || !restRunningRef.current) return;
     try {
       window.navigator?.vibrate?.([180, 70, 180, 70, 240]);
     } catch {
@@ -290,6 +291,17 @@ export default function WorkoutDetail() {
     }
   };
 
+  const stopRestTimerAlert = () => {
+    const audio = restAlertAudioRef.current;
+    if (!audio) return;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {
+      // Only stop FitTrack's own alert clip.
+    }
+  };
+
   const saveExercises = async (nextExercises, extra = {}) => {
     if (settings?.auto_save_workouts === false && !extra.forceSave) return;
     const { forceSave, ...payload } = extra;
@@ -303,15 +315,24 @@ export default function WorkoutDetail() {
 
   const startRestTimer = () => {
     primeRestTimerAlert();
+    restWarningPlayedRef.current = false;
+    restRunningRef.current = true;
     if (restSeconds <= 0) setRestSeconds(restDurationSeconds);
     triggerWorkoutHaptic(20);
     setRestRunning(true);
   };
 
-  const stopRestTimer = () => setRestRunning(false);
+  const stopRestTimer = () => {
+    restRunningRef.current = false;
+    setRestRunning(false);
+    stopRestTimerAlert();
+  };
 
   const skipRestTimer = () => {
+    restRunningRef.current = false;
     setRestRunning(false);
+    stopRestTimerAlert();
+    restWarningPlayedRef.current = false;
     setRestSeconds(0);
     flashRestTarget();
   };
@@ -327,6 +348,8 @@ export default function WorkoutDetail() {
 
   const restartRestTimer = () => {
     primeRestTimerAlert();
+    restWarningPlayedRef.current = false;
+    restRunningRef.current = true;
     setRestSeconds(restDurationSeconds);
     triggerWorkoutHaptic(20);
     setRestRunning(true);
@@ -460,6 +483,8 @@ export default function WorkoutDetail() {
       const nextRestSeconds = Math.min(600, Math.max(15, Number(currentSet?.restSeconds) || restDurationSeconds));
       setRestDurationSeconds(nextRestSeconds);
       setRestSeconds(nextRestSeconds);
+      restWarningPlayedRef.current = false;
+      restRunningRef.current = true;
       triggerWorkoutHaptic(20);
       setRestRunning(true);
     }
@@ -614,7 +639,9 @@ export default function WorkoutDetail() {
   };
 
   const finishWorkout = async () => {
+    restRunningRef.current = false;
     setRestRunning(false);
+    stopRestTimerAlert();
     const nextExercises = loggedExercises.map((exercise) => ({
       ...exercise,
       sets: (exercise.sets || []).map((set) => ({ ...set, completed: true })),

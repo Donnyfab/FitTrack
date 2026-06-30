@@ -194,6 +194,7 @@ export const AuthProvider = ({ children }) => {
     notificationWorkoutReminders,
     notificationGoalProgress,
     notificationWeeklySummary,
+    restTimerSoundsEnabled,
     preferredTrainingDays,
     equipment,
     experienceLevel,
@@ -223,6 +224,7 @@ export const AuthProvider = ({ children }) => {
     if (notificationWorkoutReminders != null) settingsPayload.notification_workout_reminders = Boolean(notificationWorkoutReminders);
     if (notificationGoalProgress != null) settingsPayload.notification_goal_progress = Boolean(notificationGoalProgress);
     if (notificationWeeklySummary != null) settingsPayload.notification_weekly_summary = Boolean(notificationWeeklySummary);
+    if (restTimerSoundsEnabled != null) settingsPayload.rest_timer_sounds_enabled = Boolean(restTimerSoundsEnabled);
     if (preferredTrainingDays != null) settingsPayload.preferred_training_days = Array.isArray(preferredTrainingDays) ? preferredTrainingDays : [];
     if (equipment != null) settingsPayload.equipment = Array.isArray(equipment) ? equipment : [];
     if (experienceLevel != null) settingsPayload.experience_level = experienceLevel || 'beginner';
@@ -259,6 +261,7 @@ export const AuthProvider = ({ children }) => {
           'notification_workout_reminders',
           'notification_goal_progress',
           'notification_weekly_summary',
+          'rest_timer_sounds_enabled',
           'preferred_training_days',
           'equipment',
           'experience_level',

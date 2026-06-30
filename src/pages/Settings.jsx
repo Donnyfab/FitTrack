@@ -110,6 +110,7 @@ export default function Settings() {
     workoutReminders: settings?.notification_workout_reminders ?? true,
     goalProgress: settings?.notification_goal_progress ?? true,
     weeklySummary: settings?.notification_weekly_summary ?? false,
+    restTimerSounds: settings?.rest_timer_sounds_enabled ?? true,
   });
 
   useEffect(() => {
@@ -130,6 +131,7 @@ export default function Settings() {
       workoutReminders: settings?.notification_workout_reminders ?? true,
       goalProgress: settings?.notification_goal_progress ?? true,
       weeklySummary: settings?.notification_weekly_summary ?? false,
+      restTimerSounds: settings?.rest_timer_sounds_enabled ?? true,
     });
   }, [
     user?.full_name,
@@ -148,6 +150,7 @@ export default function Settings() {
     settings?.notification_workout_reminders,
     settings?.notification_goal_progress,
     settings?.notification_weekly_summary,
+    settings?.rest_timer_sounds_enabled,
   ]);
 
   useEffect(() => {
@@ -201,6 +204,7 @@ export default function Settings() {
         notificationWorkoutReminders: notifications.workoutReminders,
         notificationGoalProgress: notifications.goalProgress,
         notificationWeeklySummary: notifications.weeklySummary,
+        restTimerSoundsEnabled: notifications.restTimerSounds,
         preferredTrainingDays,
         equipment,
         experienceLevel,
@@ -232,6 +236,7 @@ export default function Settings() {
       notificationWorkoutReminders: notifications.workoutReminders,
       notificationGoalProgress: notifications.goalProgress,
       notificationWeeklySummary: notifications.weeklySummary,
+      restTimerSoundsEnabled: notifications.restTimerSounds,
       preferredTrainingDays,
       equipment,
       experienceLevel,
@@ -557,6 +562,12 @@ export default function Settings() {
               <h2 className="text-base font-semibold text-neutral-900">Notification Preferences</h2>
             </div>
             <div className="space-y-3">
+              <ToggleRow
+                label="Rest timer sounds"
+                description="Play a short warning sound when rest reaches 5 seconds."
+                checked={notifications.restTimerSounds}
+                onChange={(value) => setNotifications({ ...notifications, restTimerSounds: value })}
+              />
               <ToggleRow
                 label="Workout reminders"
                 description="Remind me before scheduled workouts."

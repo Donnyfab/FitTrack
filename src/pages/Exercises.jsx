@@ -12,6 +12,7 @@ import {
 } from "@/lib/trainingInsights";
 import {
   Activity,
+  Check,
   Dumbbell,
   HeartPulse,
   Plus,
@@ -46,7 +47,6 @@ export default function Exercises() {
   const [query, setQuery] = useState("");
   const [selectedExercise, setSelectedExercise] = useState(exerciseCatalog[0]);
   const [selectedForWorkout, setSelectedForWorkout] = useState(() => readSelectedWorkoutExercises());
-  const [pendingWorkoutExercise, setPendingWorkoutExercise] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", muscleGroup: "Chest", equipment: "Dumbbell", tip: "" });
 
@@ -183,28 +183,29 @@ export default function Exercises() {
     }
   };
 
-  const selectForWorkout = async (exercise) => {
-    if (!exercise?.name) return;
-    if (isWorkoutBuilder) {
-      setSelectedExercise(exercise);
-      setPendingWorkoutExercise(exercise.name);
-      await persistExerciseForLibrary(exercise);
-      return;
-    }
-    const nextItems = selectedForWorkout.includes(exercise.name)
-      ? selectedForWorkout
-      : [...selectedForWorkout, exercise.name];
+  const updateWorkoutSelection = (nextItems) => {
     setSelectedForWorkout(nextItems);
     writeSelectedWorkoutExercises(nextItems);
+  };
+
+  const removeWorkoutSelection = (exerciseName) => {
+    updateWorkoutSelection(selectedForWorkout.filter((name) => name !== exerciseName));
+  };
+
+  const selectForWorkout = async (exercise) => {
+    if (!exercise?.name) return;
+    const nextItems = selectedForWorkout.includes(exercise.name)
+      ? isWorkoutBuilder
+        ? selectedForWorkout.filter((name) => name !== exercise.name)
+        : selectedForWorkout
+      : [...selectedForWorkout, exercise.name];
+    updateWorkoutSelection(nextItems);
     await persistExerciseForLibrary(exercise);
   };
 
-  const confirmAddExerciseToWorkout = () => {
-    if (!pendingWorkoutExercise) return;
-    const nextItems = selectedForWorkout.includes(pendingWorkoutExercise)
-      ? selectedForWorkout
-      : [...selectedForWorkout, pendingWorkoutExercise];
-    writeSelectedWorkoutExercises(nextItems);
+  const confirmAddExercisesToWorkout = () => {
+    if (selectedForWorkout.length === 0) return;
+    writeSelectedWorkoutExercises(selectedForWorkout);
     navigate("/workouts/new");
   };
 
@@ -225,6 +226,14 @@ export default function Exercises() {
     () => getLastExercisePerformance(workouts, selectedExercise?.name),
     [selectedExercise?.name, workouts]
   );
+  const selectedWorkoutCountLabel =
+    selectedForWorkout.length === 1 ? "1 exercise" : `${selectedForWorkout.length} exercises`;
+  const selectedWorkoutSummary = selectedForWorkout.length
+    ? `${selectedForWorkout.slice(0, 2).join(", ")}${selectedForWorkout.length > 2 ? ` +${selectedForWorkout.length - 2}` : ""}`
+    : "";
+  const selectedExerciseQueued = selectedExercise
+    ? selectedForWorkout.includes(selectedExercise.name)
+    : false;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -323,16 +332,21 @@ export default function Exercises() {
           {visibleExercises.map((exercise) => {
             const Icon = iconForGroup(exercise.muscleGroup);
             const selected = selectedExercise?.name === exercise.name;
+            const queuedForWorkout = selectedForWorkout.includes(exercise.name);
             const lastEntry = lastPerformanceByExercise.get(exercise.name);
             return (
               <button
                 key={exercise.name}
                 onClick={() => {
                   setSelectedExercise(exercise);
-                  if (isWorkoutBuilder) setPendingWorkoutExercise(exercise.name);
+                  if (isWorkoutBuilder) selectForWorkout(exercise);
                 }}
                 className={`text-left bg-white rounded-2xl border p-4 transition-all hover:shadow-sm ${
-                  selected ? "border-neutral-400" : "border-neutral-200 hover:border-neutral-300"
+                  queuedForWorkout
+                    ? "border-blue-500 bg-blue-50/40"
+                    : selected
+                      ? "border-neutral-400"
+                      : "border-neutral-200 hover:border-neutral-300"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -355,6 +369,12 @@ export default function Exercises() {
                     <Star className={`w-4 h-4 ${exercise.favorite ? "fill-neutral-900 text-neutral-900" : ""}`} />
                   </span>
                 </div>
+                {isWorkoutBuilder && queuedForWorkout && (
+                  <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">
+                    <Check className="h-3 w-3" />
+                    Selected
+                  </span>
+                )}
                 <p className="mt-4 font-medium text-neutral-900">{exercise.name}</p>
                 <p className="mt-1 text-sm text-neutral-500">{exercise.muscleGroup}</p>
                 <p className="mt-1 text-xs font-medium text-neutral-400">{exercise.equipment || "Any equipment"}</p>
@@ -445,12 +465,24 @@ export default function Exercises() {
           {isWorkoutBuilder ? (
             <div className="mt-5 space-y-2">
               <button
-                onClick={pendingWorkoutExercise ? confirmAddExerciseToWorkout : () => selectForWorkout(selectedExercise)}
+                onClick={() => selectForWorkout(selectedExercise)}
                 disabled={!selectedExercise}
+                className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium transition-colors disabled:opacity-50 ${
+                  selectedExerciseQueued
+                    ? "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                    : "bg-neutral-900 text-white hover:bg-neutral-800"
+                }`}
+              >
+                {selectedExerciseQueued ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                {selectedExerciseQueued ? "Remove from plan" : "Select Exercise"}
+              </button>
+              <button
+                onClick={confirmAddExercisesToWorkout}
+                disabled={selectedForWorkout.length === 0}
                 className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
-                {pendingWorkoutExercise ? "Add Exercise" : "Select Exercise"}
+                Add {selectedWorkoutCountLabel}
               </button>
               <button
                 onClick={() => navigate("/workouts/new")}
@@ -469,29 +501,25 @@ export default function Exercises() {
             </button>
           )}
 
-          {!isWorkoutBuilder && selectedForWorkout.length > 0 && (
+          {selectedForWorkout.length > 0 && (
             <div className="mt-5 border-t border-neutral-100 pt-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-neutral-900">Selected exercises</p>
-                <button
-                  onClick={startWorkoutFromSelection}
-                  className="text-xs font-semibold text-neutral-900 hover:text-neutral-600"
-                >
-                  Build workout
-                </button>
+                {!isWorkoutBuilder && (
+                  <button
+                    onClick={startWorkoutFromSelection}
+                    className="text-xs font-semibold text-neutral-900 hover:text-neutral-600"
+                  >
+                    Build workout
+                  </button>
+                )}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {selectedForWorkout.map((name) => (
                   <span key={name} className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-700">
                     {name}
                     <button
-                      onClick={() =>
-                        setSelectedForWorkout((items) => {
-                          const nextItems = items.filter((item) => item !== name);
-                          writeSelectedWorkoutExercises(nextItems);
-                          return nextItems;
-                        })
-                      }
+                      onClick={() => removeWorkoutSelection(name)}
                       aria-label={`Remove ${name}`}
                     >
                       <X className="w-3 h-3" />
@@ -504,19 +532,19 @@ export default function Exercises() {
         </aside>
       </div>
 
-      {isWorkoutBuilder && pendingWorkoutExercise && (
+      {isWorkoutBuilder && selectedForWorkout.length > 0 && (
         <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 px-4 lg:hidden">
           <div className="mx-auto flex max-w-lg items-center gap-3 rounded-2xl border border-neutral-200 bg-white/95 p-3 shadow-[0_18px_60px_-28px_rgba(23,23,23,0.55)] backdrop-blur-xl">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-neutral-500">Selected exercise</p>
-              <p className="truncate text-sm font-semibold text-neutral-900">{pendingWorkoutExercise}</p>
+              <p className="truncate text-xs font-medium text-neutral-500">{selectedWorkoutCountLabel} selected</p>
+              <p className="truncate text-sm font-semibold text-neutral-900">{selectedWorkoutSummary}</p>
             </div>
             <button
-              onClick={confirmAddExerciseToWorkout}
+              onClick={confirmAddExercisesToWorkout}
               className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 text-sm font-medium text-white"
             >
               <Plus className="h-4 w-4" />
-              Add Exercise
+              Add
             </button>
           </div>
         </div>

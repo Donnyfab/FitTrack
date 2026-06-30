@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
-import { calculateWorkoutVolume, formatDateLong } from "@/lib/workoutUtils";
+import { formatDateLong } from "@/lib/workoutUtils";
 import { countSets, exerciseCatalog } from "@/lib/fittrackDemoData";
 import {
   detectWorkoutPRs,
@@ -16,12 +16,9 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
-  Copy,
-  MoreHorizontal,
-  Pencil,
   Plus,
-  RotateCcw,
   Search,
+  SlidersHorizontal,
   Star,
   Trophy,
   Trash2,
@@ -60,10 +57,9 @@ export default function WorkoutDetail() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [exerciseQuery, setExerciseQuery] = useState("");
   const [expandedExercises, setExpandedExercises] = useState(new Set());
+  const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
   const [swipedExerciseKey, setSwipedExerciseKey] = useState(null);
   const [exerciseSwipeState, setExerciseSwipeState] = useState(null);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [saveState, setSaveState] = useState("saved");
   const [finishSummary, setFinishSummary] = useState(null);
   const restAlertAudioRef = useRef(null);
   const restAlertUnlockedRef = useRef(false);
@@ -294,30 +290,15 @@ export default function WorkoutDetail() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm("Delete this workout? This cannot be undone.")) return;
-    await base44.entities.Workout.delete(id);
-    navigate("/workouts");
-  };
-
   const saveExercises = async (nextExercises, extra = {}) => {
     if (settings?.auto_save_workouts === false && !extra.forceSave) return;
     const { forceSave, ...payload } = extra;
-    setSaveState("saving");
     try {
       const savedWorkout = await base44.entities.Workout.update(id, { exercises: nextExercises, ...payload });
       setWorkout(savedWorkout);
-      setSaveState("saved");
     } catch (error) {
       console.error("Workout save failed:", error);
-      setSaveState("error");
     }
-  };
-
-  const setRestDuration = (seconds) => {
-    setRestDurationSeconds(seconds);
-    setRestSeconds(seconds);
-    setRestRunning(false);
   };
 
   const startRestTimer = () => {
@@ -632,24 +613,6 @@ export default function WorkoutDetail() {
     setShowExercisePicker(false);
   };
 
-  const duplicateAsTemplate = async () => {
-    const source = displayWorkout || workout;
-    if (!source) return;
-    await base44.entities.Workout.create({
-      name: `${source.name} Template`,
-      date: new Date().toISOString().split("T")[0],
-      muscleGroup: source.muscleGroup,
-      notes: source.notes,
-      exercises: loggedExercises,
-      status: "planned",
-      calories: source.calories,
-      favorite: false,
-      template: true,
-    });
-    setMoreOpen(false);
-    navigate("/workouts");
-  };
-
   const finishWorkout = async () => {
     setRestRunning(false);
     const nextExercises = loggedExercises.map((exercise) => ({
@@ -742,7 +705,6 @@ export default function WorkoutDetail() {
     );
   }
 
-  const totalVolume = calculateWorkoutVolume(displayWorkout);
   const totalSets = countSets(displayWorkout);
   const completedSets = loggedExercises.reduce(
     (sum, exercise) => sum + (exercise.sets || []).filter((set) => set.completed).length,
@@ -750,9 +712,16 @@ export default function WorkoutDetail() {
   );
   const progressPercent = totalSets > 0 ? Math.min(100, Math.round((completedSets / totalSets) * 100)) : 0;
   const exerciseCount = loggedExercises.length;
-  const nextExercise = loggedExercises.find((exercise) =>
+  const remainingSets = Math.max(0, totalSets - completedSets);
+  const remainingExerciseCount = loggedExercises.filter((exercise) =>
     (exercise.sets || []).some((set) => !set.completed)
-  );
+  ).length;
+  const exerciseEntries = loggedExercises
+    .map((exercise, exerciseIndex) => ({ exercise, exerciseIndex }))
+    .filter(({ exercise }) => !showIncompleteOnly || (exercise.sets || []).some((set) => !set.completed));
+  const remainingSummary = `${remainingExerciseCount} ${
+    remainingExerciseCount === 1 ? "exercise" : "exercises"
+  } left • ${remainingSets} ${remainingSets === 1 ? "set" : "sets"} remaining`;
   const pickerResults = availableExercises.filter((exercise) =>
     `${exercise.name} ${exercise.muscleGroup} ${exercise.equipment || ""}`.toLowerCase().includes(exerciseQuery.toLowerCase())
   );
@@ -760,97 +729,59 @@ export default function WorkoutDetail() {
   const prByExercise = new Map(workoutPrs.map((pr) => [pr.exercise, pr]));
 
   return (
-    <div className="animate-fade-in space-y-6">
+    <div className="animate-fade-in space-y-5">
       <Link to="/workouts" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Workouts
       </Link>
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight break-words">{displayWorkout.name}</h1>
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <span className="text-sm text-neutral-500">{formatDateLong(displayWorkout.date)}</span>
-            {displayWorkout.muscleGroup && (
-              <>
-                <span className="text-neutral-300">·</span>
-                <span className="text-sm text-neutral-500">{displayWorkout.muscleGroup}</span>
-              </>
-            )}
-          </div>
+      <div className="min-w-0">
+        <h1 className="text-3xl font-semibold text-neutral-900 tracking-tight break-words">{displayWorkout.name}</h1>
+        <p className="mt-3 text-sm text-neutral-500">{formatDateLong(displayWorkout.date)}</p>
+        {displayWorkout.muscleGroup && (
+          <p className="mt-2 text-sm text-neutral-500">{displayWorkout.muscleGroup}</p>
+        )}
+        <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-blue-600">
+          <span>{exerciseCount} {exerciseCount === 1 ? "Exercise" : "Exercises"}</span>
+          <span className="text-neutral-300">•</span>
+          <span>{totalSets} {totalSets === 1 ? "Set" : "Sets"}</span>
         </div>
       </div>
 
-      <div className="relative flex flex-wrap items-center gap-2">
-        <Link to={`/workouts/${id}/edit`} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors">
-          <Pencil className="w-3.5 h-3.5" /> Edit
-        </Link>
-        <button
-          onClick={() => setMoreOpen((value) => !value)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
-          aria-expanded={moreOpen}
-          aria-haspopup="menu"
-        >
-          <MoreHorizontal className="w-4 h-4" /> More
-        </button>
-        <div className="relative flex items-center gap-2 shrink-0">
-          {moreOpen && (
-            <div className="absolute left-0 top-11 z-20 w-56 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl" role="menu">
-              <button onClick={duplicateAsTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
-                <Copy className="h-4 w-4 text-neutral-400" /> Save as template
-              </button>
-              <button onClick={() => { setRestDuration(defaultRestSeconds); setMoreOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" role="menuitem">
-                <RotateCcw className="h-4 w-4 text-neutral-400" /> Reset rest timer
-              </button>
-            </div>
-          )}
-        </div>
-        <button onClick={handleDelete} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-          <Trash2 className="w-3.5 h-3.5" /> Delete
-        </button>
-      </div>
-
-      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Workout progress</p>
-            <p className="mt-1 text-sm font-medium text-neutral-900">{completedSets}/{totalSets} sets completed</p>
-          </div>
-          <p className="text-sm font-semibold text-neutral-900">{progressPercent}%</p>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-neutral-900">Workout progress</p>
+          <p className="text-2xl font-semibold leading-none text-neutral-900">{progressPercent}%</p>
         </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-neutral-100">
+        <div className="mt-4 h-3 overflow-hidden rounded-full bg-neutral-100">
           <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progressPercent}%` }} />
         </div>
+        <p className="mt-3 text-sm text-neutral-500">{remainingSummary}</p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">Exercises</p>
-          <p className="text-2xl font-semibold text-neutral-900">{exerciseCount}</p>
-          <p className="text-xs text-neutral-500 mt-1">{completedSets}/{totalSets} sets completed</p>
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-semibold tracking-tight text-neutral-900">Exercises</h2>
+          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-neutral-100 px-2 text-sm font-semibold text-neutral-700">
+            {exerciseCount}
+          </span>
         </div>
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-          <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">Total volume</p>
-          <p className="text-2xl font-semibold text-neutral-900">{totalVolume.toLocaleString()}</p>
-          <p className="text-xs text-neutral-500 mt-1">lbs · {totalSets} sets</p>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-neutral-900">Next exercise/rest suggestion</p>
-            <p className="text-sm text-neutral-500 mt-1">
-              {nextExercise ? `Next: ${nextExercise.name}. Rest ${defaultRestSeconds} seconds, then match last set quality.` : "All planned sets are checked off."}
-            </p>
-          </div>
-          <p className={`text-xs ${saveState === "error" ? "text-red-500" : "text-neutral-400"}`}>
-            {saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : settings?.auto_save_workouts === false ? "Saved on finish" : "Saved"}
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowIncompleteOnly((value) => !value)}
+          className={`inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors ${
+            showIncompleteOnly
+              ? "border-blue-200 bg-blue-50 text-blue-700"
+              : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+          }`}
+          aria-pressed={showIncompleteOnly}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filter
+        </button>
       </div>
 
       <div className="space-y-3">
-        {loggedExercises.map((exercise, exerciseIndex) => {
+        {exerciseEntries.map(({ exercise, exerciseIndex }) => {
           const exerciseKey = getExerciseKey(exercise, exerciseIndex);
           const isExpanded = expandedExercises.has(exerciseIndex);
           const swipeOffset =

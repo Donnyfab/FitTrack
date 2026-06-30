@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
       completion = await anthropic.messages.create({
         model: Deno.env.get("ANTHROPIC_MODEL") || "claude-sonnet-4-6",
-        max_tokens: 2500,
+        max_tokens: Number(Deno.env.get("ANTHROPIC_MAX_TOKENS") || 6000),
         temperature,
         system,
         messages: chatMessages,

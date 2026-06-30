@@ -84,7 +84,7 @@ async function callAnthropic({ messages, temperature, response_format }) {
     },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
-      max_tokens: 2500,
+      max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 6000),
       temperature,
       system,
       messages: chatMessages,

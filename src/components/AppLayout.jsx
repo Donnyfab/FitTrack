@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, NavLink, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { getUserFirstName } from "@/lib/userDisplay";
@@ -49,6 +49,15 @@ const formatHeaderTimer = (seconds) => {
   return `${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`;
 };
 
+const triggerHaptic = (pattern = 10) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.navigator?.vibrate?.(pattern);
+  } catch {
+    // Haptics are best-effort and unsupported in some browsers.
+  }
+};
+
 function RestProgressRing({
   seconds = 0,
   duration = 1,
@@ -95,6 +104,9 @@ export default function AppLayout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [restTimerHeader, setRestTimerHeader] = useState(null);
   const [restTimerExpanded, setRestTimerExpanded] = useState(false);
+  const [restTimerPanelMounted, setRestTimerPanelMounted] = useState(false);
+  const [restTimerClosing, setRestTimerClosing] = useState(false);
+  const restTimerCloseTimeoutRef = useRef(null);
   const firstName = getUserFirstName(user, "User");
   const initial = (user?.full_name || user?.email || "U")[0]?.toUpperCase();
   const avatarUrl = user?.avatar_url;
@@ -104,28 +116,60 @@ export default function AppLayout() {
   const restTimerNext = restTimerHeader?.nextExerciseName
     ? `Next: ${restTimerHeader.nextExerciseName}`
     : "Next set is ready";
+  const restTimerFinalCountdown = restTimerSeconds > 0 && restTimerSeconds <= 10;
+  const showExpandedRestTimer = restTimerHeader && (restTimerExpanded || restTimerPanelMounted);
+
+  const collapseRestTimer = () => {
+    if (!restTimerExpanded && !restTimerPanelMounted) return;
+    triggerHaptic(8);
+    window.clearTimeout(restTimerCloseTimeoutRef.current);
+    setRestTimerClosing(true);
+    setRestTimerExpanded(false);
+    restTimerCloseTimeoutRef.current = window.setTimeout(() => {
+      setRestTimerPanelMounted(false);
+      setRestTimerClosing(false);
+    }, 240);
+  };
+
+  const expandRestTimer = () => {
+    triggerHaptic(8);
+    window.clearTimeout(restTimerCloseTimeoutRef.current);
+    setProfileOpen(false);
+    setRestTimerClosing(false);
+    setRestTimerPanelMounted(true);
+    setRestTimerExpanded(true);
+  };
 
   useEffect(() => {
     const handleRestTimerHeader = (event) => {
       const detail = event.detail || {};
       if (!detail.visible) {
+        window.clearTimeout(restTimerCloseTimeoutRef.current);
         setRestTimerHeader(null);
         setRestTimerExpanded(false);
+        setRestTimerPanelMounted(false);
+        setRestTimerClosing(false);
         return;
       }
       setRestTimerHeader(detail);
       if (!detail.running && Number(detail.seconds) <= 0) {
+        window.clearTimeout(restTimerCloseTimeoutRef.current);
         setRestTimerExpanded(false);
+        setRestTimerPanelMounted(false);
+        setRestTimerClosing(false);
       }
     };
 
     window.addEventListener("fittrack:rest-timer-header", handleRestTimerHeader);
-    return () => window.removeEventListener("fittrack:rest-timer-header", handleRestTimerHeader);
+    return () => {
+      window.clearTimeout(restTimerCloseTimeoutRef.current);
+      window.removeEventListener("fittrack:rest-timer-header", handleRestTimerHeader);
+    };
   }, []);
 
   const dispatchRestTimerAction = (action, payload = {}) => {
     window.dispatchEvent(new CustomEvent("fittrack:rest-timer-action", { detail: { action, ...payload } }));
-    if (action === "skip") setRestTimerExpanded(false);
+    if (action === "skip") collapseRestTimer();
   };
 
   return (
@@ -191,64 +235,107 @@ export default function AppLayout() {
         </div>
       </aside>
 
+      {showExpandedRestTimer && (
+        <button
+          type="button"
+          aria-label="Collapse rest timer"
+          onClick={collapseRestTimer}
+          className={`fixed inset-0 z-30 bg-neutral-950/10 backdrop-blur-[14px] transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+            restTimerClosing ? "opacity-0" : "opacity-100"
+          }`}
+        />
+      )}
+
       <header
         className={`lg:hidden sticky top-0 z-40 transition-[background-color,border-color,box-shadow] duration-300 ease-out ${
-          restTimerHeader && restTimerExpanded
+          showExpandedRestTimer
             ? "border-b border-transparent bg-transparent shadow-none"
             : "border-b border-white/60 bg-white/78 shadow-[0_14px_38px_-34px_rgba(29,29,31,0.65)] backdrop-blur-2xl"
         }`}
       >
-        {restTimerHeader && restTimerExpanded ? (
+        {showExpandedRestTimer ? (
           <div className="px-3 py-2">
-            <div className="flex h-[136px] items-center gap-3 rounded-[1.65rem] bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 px-3.5 text-white shadow-[0_24px_58px_-34px_rgba(37,99,235,0.98)] transition-transform duration-300 ease-out motion-reduce:transition-none">
-              <button
-                type="button"
-                onClick={() => setRestTimerExpanded(false)}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white"
-                aria-label="Collapse rest timer"
-              >
-                <X className="h-5 w-5" />
-              </button>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={collapseRestTimer}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  collapseRestTimer();
+                }
+              }}
+              className={`rest-timer-panel relative flex h-[112px] items-center gap-3 overflow-hidden rounded-[1.55rem] bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 px-3.5 text-white shadow-[0_24px_58px_-34px_rgba(37,99,235,0.98)] ${
+                restTimerClosing ? "rest-timer-panel-out" : "rest-timer-panel-in"
+              } ${restTimerFinalCountdown && !restTimerClosing ? "rest-timer-final-pulse" : ""}`}
+              aria-label="Collapse rest timer controls"
+            >
+              <span className="rest-timer-sheen pointer-events-none absolute inset-y-0 -left-1/3 w-1/2 rotate-12 bg-white/20 blur-2xl" />
+              <span className="pointer-events-none absolute inset-0 rounded-[1.55rem] bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.26),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.08),transparent)]" />
 
-              <div className="relative flex h-[76px] w-[76px] shrink-0 items-center justify-center text-white">
+              <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/90">
+                <X className="h-5 w-5" />
+              </span>
+
+              <div className="relative flex h-[62px] w-[62px] shrink-0 items-center justify-center text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.42)]">
                 <RestProgressRing
                   seconds={restTimerSeconds}
                   duration={restTimerDuration}
-                  size={74}
-                  strokeWidth={6}
+                  size={60}
+                  strokeWidth={5}
                   trackClassName="text-white/25"
                   progressClassName="text-white"
                 />
               </div>
 
-              <div className="min-w-0 flex-1">
-                <p className="text-4xl font-semibold leading-none tracking-tight">{restTimerTime}</p>
-                <p className="mt-1 text-sm font-semibold text-white">Rest Time</p>
-                <p className="mt-0.5 truncate text-sm text-white/75">{restTimerNext}</p>
+              <div className="relative min-w-0 flex-1">
+                <p className="text-3xl font-semibold leading-none tracking-tight">{restTimerTime}</p>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/80">Rest Time</p>
+                <p className="mt-1 truncate text-xs font-medium text-white/78">{restTimerNext}</p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="relative flex shrink-0 items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => dispatchRestTimerAction("skip")}
-                  className="flex w-14 flex-col items-center gap-1 text-[11px] font-semibold text-white/90"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    dispatchRestTimerAction("skip");
+                  }}
+                  className="flex w-12 flex-col items-center gap-1 text-[10px] font-semibold text-white/90"
                   aria-label="Skip rest"
                 >
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/10">
-                    <SkipForward className="h-5 w-5" />
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/65 bg-white/10">
+                    <SkipForward className="h-4 w-4" />
                   </span>
                   <span>Skip</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => dispatchRestTimerAction("add-seconds", { seconds: 30 })}
-                  className="flex w-14 flex-col items-center gap-1 text-[11px] font-semibold text-white/90"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    dispatchRestTimerAction("add-seconds", { seconds: 15 });
+                  }}
+                  className="flex w-12 flex-col items-center gap-1 text-[10px] font-semibold text-white/90"
+                  aria-label="Add 15 seconds"
+                >
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/65 bg-white/10">
+                    <Plus className="h-4 w-4" />
+                  </span>
+                  <span>15s</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    dispatchRestTimerAction("add-seconds", { seconds: 30 });
+                  }}
+                  className="flex w-12 flex-col items-center gap-1 text-[10px] font-semibold text-white/90"
                   aria-label="Add 30 seconds"
                 >
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/10">
-                    <Plus className="h-5 w-5" />
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/65 bg-white/10">
+                    <Plus className="h-4 w-4" />
                   </span>
-                  <span>Add 30s</span>
+                  <span>30s</span>
                 </button>
               </div>
             </div>
@@ -266,12 +353,14 @@ export default function AppLayout() {
             {restTimerHeader && (
               <button
                 type="button"
-                onClick={() => setRestTimerExpanded(true)}
-                className="mx-2 inline-flex min-w-0 flex-1 max-w-[9.5rem] items-center justify-center gap-2 rounded-full border border-neutral-200/80 bg-white/90 px-2.5 py-1.5 text-left shadow-[0_10px_30px_-24px_rgba(29,29,31,0.7)] transition-all duration-300 ease-out active:scale-[0.98] motion-reduce:transition-none"
+                onClick={expandRestTimer}
+                className={`mx-2 inline-flex min-w-0 flex-1 max-w-[9.5rem] -translate-x-4 items-center justify-center gap-2 rounded-full border border-neutral-200/80 bg-white/90 px-2.5 py-1.5 text-left shadow-[0_10px_30px_-24px_rgba(29,29,31,0.7)] transition-all duration-300 ease-out active:scale-[0.98] motion-reduce:transition-none ${
+                  restTimerFinalCountdown ? "rest-timer-compact-final-pulse" : ""
+                }`}
                 aria-expanded={restTimerExpanded}
                 aria-label="Open rest timer controls"
               >
-                <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center text-blue-600">
+                <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center text-blue-600 drop-shadow-[0_0_10px_rgba(23,120,242,0.22)]">
                   <RestProgressRing seconds={restTimerSeconds} duration={restTimerDuration} size={28} strokeWidth={2.5} />
                 </span>
                 <span className="min-w-0">
@@ -334,7 +423,11 @@ export default function AppLayout() {
         </div>
       </main>
 
-      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200/70 bg-white/82 backdrop-blur-2xl shadow-[0_-12px_34px_-30px_rgba(29,29,31,0.75)]">
+      <nav
+        className={`lg:hidden fixed inset-x-0 bottom-0 border-t border-neutral-200/70 bg-white/82 backdrop-blur-2xl shadow-[0_-12px_34px_-30px_rgba(29,29,31,0.75)] ${
+          showExpandedRestTimer ? "z-20" : "z-40"
+        }`}
+      >
         <div className="grid grid-cols-5 h-[calc(3.9rem+env(safe-area-inset-bottom))] px-2 pt-1 pb-[env(safe-area-inset-bottom)]">
           {mobileNavItems.map((item) => (
             <NavLink

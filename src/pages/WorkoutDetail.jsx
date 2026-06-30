@@ -16,12 +16,9 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
-  Clock,
   Copy,
   MoreHorizontal,
-  Pause,
   Pencil,
-  Play,
   Plus,
   RotateCcw,
   Search,
@@ -31,13 +28,16 @@ import {
   X,
 } from "lucide-react";
 
-const formatTimer = (seconds) => {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return `${minutes}:${rest.toString().padStart(2, "0")}`;
-};
-
 const REST_TIMER_ALERT_SRC = "/sounds/rest-timer-alert.wav";
+
+const triggerWorkoutHaptic = (pattern = 16) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.navigator?.vibrate?.(pattern);
+  } catch {
+    // Haptics are optional and unsupported in some browsers.
+  }
+};
 
 export default function WorkoutDetail() {
   const { id } = useParams();
@@ -47,8 +47,6 @@ export default function WorkoutDetail() {
   const [loggedExercises, setLoggedExercises] = useState([]);
   const [allWorkouts, setAllWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [workoutSeconds, setWorkoutSeconds] = useState(0);
-  const [workoutTimerRunning, setWorkoutTimerRunning] = useState(false);
   const defaultRestSeconds = Number(settings?.default_rest_timer_seconds) || 90;
   const [restDurationSeconds, setRestDurationSeconds] = useState(defaultRestSeconds);
   const [restSeconds, setRestSeconds] = useState(defaultRestSeconds);
@@ -99,29 +97,6 @@ export default function WorkoutDetail() {
   useEffect(() => {
     loadWorkout();
   }, [id]);
-
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(`fittrack-workout-timer:${id}`) || "null");
-      setWorkoutSeconds(Number(saved?.seconds) || 0);
-    } catch {
-      setWorkoutSeconds(0);
-    }
-    setWorkoutTimerRunning(false);
-  }, [id]);
-
-  useEffect(() => {
-    if (!workoutTimerRunning) return undefined;
-    const interval = window.setInterval(() => setWorkoutSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(interval);
-  }, [workoutTimerRunning]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      `fittrack-workout-timer:${id}`,
-      JSON.stringify({ seconds: workoutSeconds })
-    );
-  }, [id, workoutSeconds]);
 
   useEffect(() => {
     setRestDurationSeconds(defaultRestSeconds);
@@ -348,6 +323,7 @@ export default function WorkoutDetail() {
   const startRestTimer = () => {
     primeRestTimerAlert();
     if (restSeconds <= 0) setRestSeconds(restDurationSeconds);
+    triggerWorkoutHaptic(20);
     setRestRunning(true);
   };
 
@@ -371,6 +347,7 @@ export default function WorkoutDetail() {
   const restartRestTimer = () => {
     primeRestTimerAlert();
     setRestSeconds(restDurationSeconds);
+    triggerWorkoutHaptic(20);
     setRestRunning(true);
   };
 
@@ -395,10 +372,11 @@ export default function WorkoutDetail() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !workout) return;
+    const shouldShowHeaderTimer = Boolean(restTarget && restSeconds > 0);
     window.dispatchEvent(
       new CustomEvent("fittrack:rest-timer-header", {
         detail: {
-          visible: true,
+          visible: shouldShowHeaderTimer,
           seconds: restSeconds,
           durationSeconds: restDurationSeconds,
           running: restRunning,
@@ -407,7 +385,15 @@ export default function WorkoutDetail() {
         },
       })
     );
-  }, [workout, restSeconds, restDurationSeconds, restRunning, restHeaderContext.afterExerciseName, restHeaderContext.nextExerciseName]);
+  }, [
+    workout,
+    restSeconds,
+    restDurationSeconds,
+    restRunning,
+    restHeaderContext.afterExerciseName,
+    restHeaderContext.nextExerciseName,
+    restTarget,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -493,6 +479,7 @@ export default function WorkoutDetail() {
       const nextRestSeconds = Math.min(600, Math.max(15, Number(currentSet?.restSeconds) || restDurationSeconds));
       setRestDurationSeconds(nextRestSeconds);
       setRestSeconds(nextRestSeconds);
+      triggerWorkoutHaptic(20);
       setRestRunning(true);
     }
     saveExercises(nextExercises);
@@ -664,7 +651,6 @@ export default function WorkoutDetail() {
   };
 
   const finishWorkout = async () => {
-    setWorkoutTimerRunning(false);
     setRestRunning(false);
     const nextExercises = loggedExercises.map((exercise) => ({
       ...exercise,
@@ -676,7 +662,7 @@ export default function WorkoutDetail() {
     const prs = detectWorkoutPRs(nextWorkout, allWorkouts.filter((item) => item.id !== id));
     setFinishSummary({
       workout: nextWorkout,
-      duration: Math.max(Math.ceil(workoutSeconds / 60), getWorkoutDurationMinutes(nextWorkout)),
+      duration: getWorkoutDurationMinutes(nextWorkout),
       sets: countSets(nextWorkout),
       completedSets: countSets(nextWorkout),
       exercises: nextExercises.length,
@@ -791,21 +777,6 @@ export default function WorkoutDetail() {
               </>
             )}
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm shadow-neutral-950/[0.03]">
-          <Clock className="hidden h-4 w-4 text-neutral-300 sm:block" />
-          <div className="text-right">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Active</p>
-            <p className="text-lg font-semibold leading-tight text-neutral-900">{formatTimer(workoutSeconds)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWorkoutTimerRunning((running) => !running)}
-            className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-white"
-            aria-label={workoutTimerRunning ? "Pause workout timer" : "Start workout timer"}
-          >
-            {workoutTimerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}
-          </button>
         </div>
       </div>
 

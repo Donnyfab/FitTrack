@@ -23,10 +23,10 @@ import {
   ChevronRight,
   Dumbbell,
   Flame,
-  History,
   Layers3,
   Play,
-  Sparkles,
+  Square,
+  Target,
 } from "lucide-react";
 
 function getGreeting() {
@@ -69,6 +69,28 @@ function getRemainingExerciseCount(workout) {
   }).length;
 }
 
+function getExerciseStats(workout) {
+  const total = Array.isArray(workout?.exercises) ? workout.exercises.length : 0;
+  const remaining = getRemainingExerciseCount(workout);
+  return {
+    completed: Math.max(total - remaining, 0),
+    total,
+    remaining,
+  };
+}
+
+function getEstimatedMinutesRemaining(workout) {
+  const stats = getWorkoutSetStats(workout);
+  if (!stats.remaining) return 0;
+
+  const duration = getWorkoutDurationMinutes(workout);
+  if (duration && stats.total) {
+    return Math.max(1, Math.round(duration * (stats.remaining / stats.total)));
+  }
+
+  return Math.max(1, stats.remaining * 2);
+}
+
 function getEstimatedCalories(workout) {
   if (!workout) return null;
   const savedCalories = Number(workout.calories);
@@ -93,9 +115,20 @@ function getWorkoutHref(workout) {
 }
 
 function getDashboardWorkout(workouts, todayKey) {
-  const todayWorkouts = workouts.filter((workout) => workout.date === todayKey && workout.status !== "missed");
-  const activeToday = todayWorkouts.find((workout) => getRemainingSetCount(workout) > 0);
+  const unfinished = workouts.filter((workout) => {
+    const stats = getWorkoutSetStats(workout);
+    return stats.completed > 0 && stats.remaining > 0 && workout.status !== "missed";
+  });
+
+  const activeToday = unfinished.find((workout) => workout.date === todayKey);
   if (activeToday) return activeToday;
+
+  const activeAnytime = unfinished.find((workout) => workout.date <= todayKey);
+  if (activeAnytime) return activeAnytime;
+
+  const todayWorkouts = workouts.filter((workout) => workout.date === todayKey && workout.status !== "missed");
+  const plannedToday = todayWorkouts.find((workout) => getRemainingSetCount(workout) > 0);
+  if (plannedToday) return plannedToday;
 
   const overdueActive = workouts.find(
     (workout) =>
@@ -110,22 +143,153 @@ function getDashboardWorkout(workouts, todayKey) {
 
 function EmptyHero() {
   return (
-    <section className="rounded-[2rem] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-neutral-100 sm:p-7">
-      <div className="flex h-full min-h-[232px] flex-col justify-between">
+    <section className="rounded-[1.65rem] bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] ring-1 ring-neutral-100 sm:p-5">
+      <div className="flex min-h-[150px] flex-col justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.17em] text-blue-600">
             Today&apos;s workout
           </p>
-          <h2 className="mt-4 max-w-sm text-4xl font-semibold leading-[0.98] tracking-tight text-neutral-950">
-            Plan today&apos;s workout
+          <h2 className="mt-3 max-w-sm text-2xl font-semibold tracking-tight text-neutral-950">
+            No workout scheduled.
           </h2>
-          <p className="mt-3 max-w-md text-base leading-6 text-neutral-500">
-            No workout is scheduled right now. Build one or pick a template when you are ready.
+          <p className="mt-1.5 max-w-md text-sm leading-5 text-neutral-500">
+            Create a workout when you are ready to train.
           </p>
         </div>
         <Link
           to="/workouts/new"
-          className="mt-6 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[1.35rem] bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)] transition hover:bg-blue-500 active:scale-[0.99] sm:w-auto sm:min-w-56"
+          className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[1.1rem] bg-blue-600 px-4 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(37,99,235,0.25)] transition hover:bg-blue-500 active:scale-[0.99] sm:w-auto sm:min-w-48"
+        >
+          <Play className="h-4 w-4 fill-white" />
+          Create Workout
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function WorkoutHero({ workout, onEndWorkout, ending }) {
+  const stats = getWorkoutSetStats(workout);
+  const hasStarted = stats.completed > 0 && stats.remaining > 0;
+  const exerciseStats = getExerciseStats(workout);
+  const duration = getWorkoutDurationMinutes(workout);
+  const calories = getEstimatedCalories(workout);
+  const minutesRemaining = getEstimatedMinutesRemaining(workout);
+
+  if (!workout) return <EmptyHero />;
+
+  if (hasStarted) {
+    return (
+      <section className="relative overflow-hidden rounded-[1.65rem] bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] ring-1 ring-neutral-100 sm:p-5">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-blue-100/80 blur-3xl" />
+        <div className="relative">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.17em] text-blue-600">
+                Workout in progress
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-neutral-950">
+                {workout.name}
+              </h2>
+            </div>
+            <p className="text-3xl font-semibold tracking-tight text-neutral-950">
+              {stats.percent}%
+            </p>
+          </div>
+
+          <p className="mt-1 text-sm font-semibold text-neutral-500">Complete</p>
+
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-neutral-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-500"
+              style={{ width: `${Math.min(stats.percent, 100)}%` }}
+            />
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+            <div className="rounded-2xl bg-neutral-50 p-2.5">
+              <p className="font-semibold text-neutral-950">
+                {exerciseStats.completed} / {exerciseStats.total}
+              </p>
+              <p className="mt-0.5 text-xs text-neutral-500">exercises</p>
+            </div>
+            <div className="rounded-2xl bg-neutral-50 p-2.5">
+              <p className="font-semibold text-neutral-950">
+                {stats.completed} / {stats.total}
+              </p>
+              <p className="mt-0.5 text-xs text-neutral-500">sets</p>
+            </div>
+            <div className="rounded-2xl bg-neutral-50 p-2.5">
+              <p className="font-semibold text-neutral-950">{minutesRemaining} min</p>
+              <p className="mt-0.5 text-xs text-neutral-500">remaining</p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
+            <Link
+              to={getWorkoutHref(workout)}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[1.1rem] bg-blue-600 px-4 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(37,99,235,0.25)] transition hover:bg-blue-500 active:scale-[0.99]"
+            >
+              <Play className="h-4 w-4 fill-white" />
+              Resume Workout
+            </Link>
+            <button
+              type="button"
+              onClick={() => onEndWorkout?.(workout)}
+              disabled={ending}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[1.1rem] bg-neutral-100 px-4 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-200 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Square className="h-3.5 w-3.5" />
+              {ending ? "Ending" : "End"}
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="relative overflow-hidden rounded-[1.65rem] bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] ring-1 ring-neutral-100 sm:p-5">
+      <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-blue-100/80 blur-3xl" />
+      <div className="relative flex min-h-[170px] flex-col justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.17em] text-blue-600">
+            Today&apos;s workout
+          </p>
+          <h2 className="mt-3 max-w-md text-3xl font-semibold leading-tight tracking-tight text-neutral-950">
+            {workout.name}
+          </h2>
+          <p className="mt-1.5 text-sm leading-5 text-neutral-500">{getWorkoutSubtitle(workout)}</p>
+
+          <div className="mt-4 grid grid-cols-3 divide-x divide-neutral-200 rounded-2xl bg-neutral-50/80 py-3">
+            <div className="px-2.5">
+              <p className="text-base font-semibold tabular-nums text-neutral-950">
+                {duration ? formatDuration(duration) : "—"}
+              </p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+                Est. time
+              </p>
+            </div>
+            <div className="px-2.5">
+              <p className="text-base font-semibold tabular-nums text-neutral-950">{stats.total || "—"}</p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+                Planned
+              </p>
+            </div>
+            <div className="px-2.5">
+              <p className="text-base font-semibold tabular-nums text-neutral-950">
+                {calories ? calories.toLocaleString() : "—"}
+              </p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+                Est. burn
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Link
+          to={getWorkoutHref(workout)}
+          className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[1.1rem] bg-blue-600 px-4 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(37,99,235,0.25)] transition hover:bg-blue-500 active:scale-[0.99]"
         >
           <Play className="h-4 w-4 fill-white" />
           Start Workout
@@ -135,131 +299,27 @@ function EmptyHero() {
   );
 }
 
-function WorkoutHero({ workout }) {
-  const stats = getWorkoutSetStats(workout);
-  const hasStarted = stats.completed > 0 && stats.remaining > 0;
-  const isFinished = stats.total > 0 && stats.remaining === 0 && stats.completed > 0;
-  const remainingExercises = getRemainingExerciseCount(workout);
-  const duration = getWorkoutDurationMinutes(workout);
-  const calories = getEstimatedCalories(workout);
-  const ctaLabel = hasStarted ? "Resume Workout" : isFinished ? "Review Workout" : "Start Workout";
-
-  if (!workout) return <EmptyHero />;
-
-  return (
-    <section className="relative overflow-hidden rounded-[2rem] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-neutral-100 sm:p-7">
-      <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-blue-100/80 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-28 left-10 h-44 w-44 rounded-full bg-sky-50 blur-3xl" />
-
-      {hasStarted || isFinished ? (
-        <div className="relative flex min-h-[232px] flex-col justify-between">
-          <div>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-                  Workout progress
-                </p>
-                <h2 className="mt-4 text-4xl font-semibold leading-[0.98] tracking-tight text-neutral-950">
-                  {stats.percent}%
-                </h2>
-              </div>
-              <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
-                {stats.completed}/{stats.total}
-              </div>
-            </div>
-
-            <div className="mt-5 h-3 overflow-hidden rounded-full bg-neutral-100">
-              <div
-                className="h-full rounded-full bg-blue-600 transition-all duration-500"
-                style={{ width: `${Math.min(stats.percent, 100)}%` }}
-              />
-            </div>
-            <p className="mt-4 text-lg font-semibold text-neutral-950">{workout.name}</p>
-            <p className="mt-2 text-base leading-6 text-neutral-500">
-              {remainingExercises} exercise{remainingExercises !== 1 ? "s" : ""} remaining ·{" "}
-              {stats.remaining} set{stats.remaining !== 1 ? "s" : ""} remaining
-            </p>
-          </div>
-
-          <Link
-            to={getWorkoutHref(workout)}
-            className="mt-6 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[1.35rem] bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)] transition hover:bg-blue-500 active:scale-[0.99]"
-          >
-            <Play className="h-4 w-4 fill-white" />
-            {ctaLabel}
-          </Link>
-        </div>
-      ) : (
-        <div className="relative flex min-h-[232px] flex-col justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-              Today&apos;s workout
-            </p>
-            <h2 className="mt-4 max-w-md text-4xl font-semibold leading-[0.98] tracking-tight text-neutral-950">
-              {workout.name}
-            </h2>
-            <p className="mt-3 text-base leading-6 text-neutral-500">{getWorkoutSubtitle(workout)}</p>
-
-            <div className="mt-6 grid grid-cols-3 divide-x divide-neutral-200 rounded-2xl bg-neutral-50/80 py-4">
-              <div className="px-3">
-                <p className="text-lg font-semibold tabular-nums text-neutral-950">
-                  {duration ? formatDuration(duration) : "—"}
-                </p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
-                  Est. time
-                </p>
-              </div>
-              <div className="px-3">
-                <p className="text-lg font-semibold tabular-nums text-neutral-950">{stats.total || "—"}</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
-                  Planned
-                </p>
-              </div>
-              <div className="px-3">
-                <p className="text-lg font-semibold tabular-nums text-neutral-950">
-                  {calories ? calories.toLocaleString() : "—"}
-                </p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
-                  Est. burn
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <Link
-            to={getWorkoutHref(workout)}
-            className="mt-6 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[1.35rem] bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)] transition hover:bg-blue-500 active:scale-[0.99]"
-          >
-            <Play className="h-4 w-4 fill-white" />
-            {ctaLabel}
-          </Link>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function CompactStat({ icon: Icon, label, value, sublabel, progress }) {
   return (
-    <div className="rounded-[1.6rem] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-neutral-100">
-      <div className="flex items-start justify-between gap-4">
+    <div className="rounded-[1.35rem] bg-white p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.055)] ring-1 ring-neutral-100">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-neutral-500">{label}</p>
-          <p className="mt-3 text-3xl font-semibold tracking-tight text-neutral-950">{value}</p>
+          <p className="text-xs font-medium text-neutral-500">{label}</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight text-neutral-950">{value}</p>
         </div>
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-neutral-50 text-neutral-500">
-          <Icon className="h-5 w-5" />
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-neutral-50 text-neutral-500">
+          <Icon className="h-4 w-4" />
         </span>
       </div>
       {progress != null && (
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-neutral-100">
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-100">
           <div
             className="h-full rounded-full bg-blue-600 transition-all duration-500"
             style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }}
           />
         </div>
       )}
-      <p className="mt-2 text-sm text-neutral-500">{sublabel}</p>
+      <p className="mt-1.5 text-xs text-neutral-500">{sublabel}</p>
     </div>
   );
 }
@@ -268,12 +328,12 @@ function QuickAction({ to, icon: Icon, label }) {
   return (
     <Link
       to={to}
-      className="group flex min-h-24 flex-col items-center justify-center rounded-[1.35rem] bg-white p-3 text-center shadow-[0_14px_34px_rgba(15,23,42,0.05)] ring-1 ring-neutral-100 transition hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(15,23,42,0.08)] active:scale-[0.99]"
+      className="group flex min-h-20 flex-col items-center justify-center rounded-[1.2rem] bg-white p-2.5 text-center shadow-[0_10px_26px_rgba(15,23,42,0.045)] ring-1 ring-neutral-100 transition hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.07)] active:scale-[0.99]"
     >
-      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
-        <Icon className="h-5 w-5" />
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
+        <Icon className="h-4.5 w-4.5" />
       </span>
-      <span className="mt-3 text-sm font-semibold leading-tight text-neutral-900">{label}</span>
+      <span className="mt-2 text-xs font-semibold leading-tight text-neutral-900">{label}</span>
     </Link>
   );
 }
@@ -281,11 +341,11 @@ function QuickAction({ to, icon: Icon, label }) {
 function RecentWorkoutSection({ workout }) {
   if (!workout) {
     return (
-      <section className="rounded-[1.6rem] bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-neutral-100">
+      <section className="rounded-[1.35rem] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)] ring-1 ring-neutral-100">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-base font-semibold text-neutral-950">Weekly activity</p>
-            <p className="mt-2 text-sm text-neutral-500">Your completed workouts will appear here.</p>
+            <p className="mt-1 text-sm text-neutral-500">Your completed workouts will appear here.</p>
           </div>
           <CalendarDays className="h-5 w-5 text-neutral-400" />
         </div>
@@ -297,8 +357,8 @@ function RecentWorkoutSection({ workout }) {
   const exerciseCount = Array.isArray(workout.exercises) ? workout.exercises.length : 0;
 
   return (
-    <section className="rounded-[1.6rem] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-neutral-100">
-      <div className="mb-3 flex items-center justify-between gap-4">
+    <section className="rounded-[1.35rem] bg-white p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.055)] ring-1 ring-neutral-100">
+      <div className="mb-2.5 flex items-center justify-between gap-4">
         <h2 className="text-base font-semibold text-neutral-950">Recent workout</h2>
         <Link
           to="/workouts"
@@ -309,12 +369,12 @@ function RecentWorkoutSection({ workout }) {
       </div>
       <Link
         to={getWorkoutHref(workout)}
-        className="flex items-center justify-between gap-4 rounded-[1.25rem] bg-neutral-50 p-3.5 transition hover:bg-neutral-100"
+        className="flex items-center justify-between gap-4 rounded-[1.1rem] bg-neutral-50 p-3 transition hover:bg-neutral-100"
       >
         <div className="min-w-0">
-          <p className="truncate text-lg font-semibold text-neutral-950">{workout.name}</p>
+          <p className="truncate text-base font-semibold text-neutral-950">{workout.name}</p>
           <p className="mt-1 text-sm text-neutral-500">{formatDate(workout.date)}</p>
-          <p className="mt-3 text-sm font-medium text-neutral-600">
+          <p className="mt-2 text-sm font-medium text-neutral-600">
             {formatDuration(getWorkoutDurationMinutes(workout))} · {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""} ·{" "}
             {completedSets} set{completedSets !== 1 ? "s" : ""}
           </p>
@@ -329,6 +389,7 @@ export default function Dashboard() {
   const { user, settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [endingWorkoutId, setEndingWorkoutId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -342,6 +403,39 @@ export default function Dashboard() {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const endWorkout = async (workout) => {
+    if (!workout?.id) return;
+
+    const completedExercises = (workout.exercises || []).map((exercise) => ({
+      ...exercise,
+      sets: (exercise.sets || []).map((set) => ({ ...set, completed: true })),
+    }));
+    const completedWorkout = {
+      ...workout,
+      status: "completed",
+      date: workout.date || todayKey,
+      exercises: completedExercises,
+    };
+
+    setEndingWorkoutId(workout.id);
+    setWorkouts((current) =>
+      current.map((item) => (item.id === workout.id ? completedWorkout : item))
+    );
+
+    try {
+      await base44.entities.Workout.update(workout.id, {
+        status: "completed",
+        date: completedWorkout.date,
+        exercises: completedExercises,
+      });
+    } catch (error) {
+      console.error(error);
+      loadData();
+    } finally {
+      setEndingWorkoutId(null);
     }
   };
 
@@ -370,29 +464,33 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-5xl animate-pulse space-y-5">
-        <div className="h-10 w-72 rounded-2xl bg-neutral-100" />
-        <div className="h-72 rounded-[2rem] bg-neutral-100" />
+      <div className="mx-auto max-w-5xl animate-pulse space-y-4">
+        <div className="h-8 w-64 rounded-2xl bg-neutral-100" />
+        <div className="h-48 rounded-[1.65rem] bg-neutral-100" />
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-36 rounded-[1.6rem] bg-neutral-100" />
-          <div className="h-36 rounded-[1.6rem] bg-neutral-100" />
+          <div className="h-28 rounded-[1.35rem] bg-neutral-100" />
+          <div className="h-28 rounded-[1.35rem] bg-neutral-100" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl animate-fade-in space-y-4 pb-4">
+    <div className="mx-auto max-w-5xl animate-fade-in space-y-3.5 pb-4">
       <header className="pt-1">
-        <h1 className="max-w-3xl text-[2.35rem] font-semibold leading-[0.98] tracking-tight text-neutral-950 sm:text-5xl">
+        <h1 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight text-neutral-950 sm:text-4xl">
           {getGreeting()}, {firstName}
         </h1>
-        <p className="mt-2 text-base font-medium text-neutral-500">
+        <p className="mt-1 text-sm font-medium text-neutral-500">
           {formatDateLong(todayKey)}
         </p>
       </header>
 
-      <WorkoutHero workout={dashboardWorkout} />
+      <WorkoutHero
+        workout={dashboardWorkout}
+        onEndWorkout={endWorkout}
+        ending={endingWorkoutId === dashboardWorkout?.id}
+      />
 
       <section className="grid grid-cols-2 gap-3">
         <CompactStat
@@ -413,23 +511,10 @@ export default function Dashboard() {
       <section className="grid grid-cols-3 gap-3" aria-label="Quick actions">
         <QuickAction to="/exercise" icon={BookOpen} label="Exercise Library" />
         <QuickAction to="/workouts?tab=templates" icon={Layers3} label="Workout Templates" />
-        <QuickAction to="/workouts" icon={History} label="History" />
+        <QuickAction to="/goals" icon={Target} label="Goals" />
       </section>
 
       <RecentWorkoutSection workout={lastCompletedWorkout} />
-
-      {!dashboardWorkout && workouts.length === 0 && (
-        <Link
-          to="/workouts/new"
-          className="flex items-center justify-between rounded-[1.6rem] bg-blue-50 p-5 text-blue-700 ring-1 ring-blue-100 transition hover:bg-blue-100"
-        >
-          <span className="flex items-center gap-3 text-sm font-semibold">
-            <Sparkles className="h-5 w-5" />
-            Build your first routine
-          </span>
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      )}
     </div>
   );
 }

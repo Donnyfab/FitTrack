@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, NavLink, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { getUserFirstName } from "@/lib/userDisplay";
@@ -12,11 +12,7 @@ import {
   Settings as SettingsIcon,
   LogOut,
   CirclePlus,
-  ChevronUp,
-  Pause,
-  Play,
   Plus,
-  RotateCcw,
   SkipForward,
   X,
 } from "lucide-react";
@@ -53,7 +49,14 @@ const formatHeaderTimer = (seconds) => {
   return `${minutes.toString().padStart(2, "0")}:${rest.toString().padStart(2, "0")}`;
 };
 
-function RestProgressRing({ seconds = 0, duration = 1, size = 36, strokeWidth = 3 }) {
+function RestProgressRing({
+  seconds = 0,
+  duration = 1,
+  size = 36,
+  strokeWidth = 3,
+  trackClassName = "text-neutral-100",
+  progressClassName = "text-blue-600",
+}) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.max(0, Math.min(1, Number(seconds) / Math.max(1, Number(duration) || 1)));
@@ -68,7 +71,7 @@ function RestProgressRing({ seconds = 0, duration = 1, size = 36, strokeWidth = 
         fill="none"
         stroke="currentColor"
         strokeWidth={strokeWidth}
-        className="text-neutral-100"
+        className={trackClassName}
       />
       <circle
         cx={size / 2}
@@ -80,7 +83,7 @@ function RestProgressRing({ seconds = 0, duration = 1, size = 36, strokeWidth = 
         strokeWidth={strokeWidth}
         strokeDasharray={circumference}
         strokeDashoffset={dashOffset}
-        className="text-blue-600 transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none"
+        className={`${progressClassName} transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none`}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
       />
     </svg>
@@ -98,27 +101,9 @@ export default function AppLayout() {
   const restTimerSeconds = Math.max(0, Number(restTimerHeader?.seconds) || 0);
   const restTimerDuration = Math.max(1, Number(restTimerHeader?.durationSeconds) || restTimerSeconds || 1);
   const restTimerTime = formatHeaderTimer(restTimerSeconds);
-  const restTimerStatus = restTimerHeader?.afterExerciseName
-    ? `Resting after ${restTimerHeader.afterExerciseName}`
-    : "Rest timer ready";
   const restTimerNext = restTimerHeader?.nextExerciseName
     ? `Next: ${restTimerHeader.nextExerciseName}`
     : "Next set is ready";
-  const restTimerActions = useMemo(
-    () => [
-      {
-        action: "toggle",
-        label: restTimerHeader?.running ? "Pause" : "Resume",
-        icon: restTimerHeader?.running ? Pause : Play,
-        primary: true,
-      },
-      { action: "skip", label: "Skip Rest", icon: SkipForward },
-      { action: "add-seconds", label: "+15s", icon: Plus, seconds: 15 },
-      { action: "add-seconds", label: "+30s", icon: Plus, seconds: 30 },
-      { action: "restart", label: "Restart", icon: RotateCcw },
-    ],
-    [restTimerHeader?.running]
-  );
 
   useEffect(() => {
     const handleRestTimerHeader = (event) => {
@@ -206,143 +191,139 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <header className="lg:hidden sticky top-0 z-40 bg-white/78 backdrop-blur-2xl border-b border-white/60 shadow-[0_14px_38px_-34px_rgba(29,29,31,0.65)]">
-        <div className="flex items-center justify-between px-5 h-14">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-neutral-900 rounded-2xl flex items-center justify-center">
-              <Dumbbell className="w-3.5 h-3.5 text-white" />
+      <header
+        className={`lg:hidden sticky top-0 z-40 transition-[background-color,border-color,box-shadow] duration-300 ease-out ${
+          restTimerHeader && restTimerExpanded
+            ? "border-b border-transparent bg-transparent shadow-none"
+            : "border-b border-white/60 bg-white/78 shadow-[0_14px_38px_-34px_rgba(29,29,31,0.65)] backdrop-blur-2xl"
+        }`}
+      >
+        {restTimerHeader && restTimerExpanded ? (
+          <div className="px-3 py-2">
+            <div className="flex h-[136px] items-center gap-3 rounded-[1.65rem] bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 px-3.5 text-white shadow-[0_24px_58px_-34px_rgba(37,99,235,0.98)] transition-transform duration-300 ease-out motion-reduce:transition-none">
+              <button
+                type="button"
+                onClick={() => setRestTimerExpanded(false)}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Collapse rest timer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="relative flex h-[76px] w-[76px] shrink-0 items-center justify-center text-white">
+                <RestProgressRing
+                  seconds={restTimerSeconds}
+                  duration={restTimerDuration}
+                  size={74}
+                  strokeWidth={6}
+                  trackClassName="text-white/25"
+                  progressClassName="text-white"
+                />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-4xl font-semibold leading-none tracking-tight">{restTimerTime}</p>
+                <p className="mt-1 text-sm font-semibold text-white">Rest Time</p>
+                <p className="mt-0.5 truncate text-sm text-white/75">{restTimerNext}</p>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => dispatchRestTimerAction("skip")}
+                  className="flex w-14 flex-col items-center gap-1 text-[11px] font-semibold text-white/90"
+                  aria-label="Skip rest"
+                >
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/10">
+                    <SkipForward className="h-5 w-5" />
+                  </span>
+                  <span>Skip</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dispatchRestTimerAction("add-seconds", { seconds: 30 })}
+                  className="flex w-14 flex-col items-center gap-1 text-[11px] font-semibold text-white/90"
+                  aria-label="Add 30 seconds"
+                >
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/10">
+                    <Plus className="h-5 w-5" />
+                  </span>
+                  <span>Add 30s</span>
+                </button>
+              </div>
             </div>
-            <span className="font-semibold text-neutral-900 tracking-tight">
-              FitTrack
-            </span>
           </div>
-          {restTimerHeader && (
+        ) : (
+          <div className="flex h-14 items-center justify-between px-5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-neutral-900 rounded-2xl flex items-center justify-center">
+                <Dumbbell className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="font-semibold text-neutral-900 tracking-tight">
+                FitTrack
+              </span>
+            </div>
+            {restTimerHeader && (
+              <button
+                type="button"
+                onClick={() => setRestTimerExpanded(true)}
+                className="mx-2 inline-flex min-w-0 flex-1 max-w-[9.5rem] items-center justify-center gap-2 rounded-full border border-neutral-200/80 bg-white/90 px-2.5 py-1.5 text-left shadow-[0_10px_30px_-24px_rgba(29,29,31,0.7)] transition-all duration-300 ease-out active:scale-[0.98] motion-reduce:transition-none"
+                aria-expanded={restTimerExpanded}
+                aria-label="Open rest timer controls"
+              >
+                <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center text-blue-600">
+                  <RestProgressRing seconds={restTimerSeconds} duration={restTimerDuration} size={28} strokeWidth={2.5} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold leading-none text-blue-600">{restTimerTime}</span>
+                  <span className="mt-0.5 block truncate text-[10px] font-medium leading-none text-neutral-500">
+                    Rest Time
+                  </span>
+                </span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setRestTimerExpanded((value) => !value)}
-              className="mx-2 inline-flex min-w-0 flex-1 max-w-[9.5rem] items-center justify-center gap-2 rounded-full border border-white/80 bg-white/88 px-2.5 py-1.5 text-left shadow-[0_10px_30px_-24px_rgba(29,29,31,0.7)] transition-all duration-300 ease-out active:scale-[0.98] motion-reduce:transition-none"
-              aria-expanded={restTimerExpanded}
-              aria-label="Open rest timer controls"
+              onClick={() => setProfileOpen((value) => !value)}
+              className="w-9 h-9 overflow-hidden rounded-2xl bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
             >
-              <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center text-blue-600">
-                <RestProgressRing seconds={restTimerSeconds} duration={restTimerDuration} size={28} strokeWidth={2.5} />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[9px] font-bold uppercase tracking-[0.14em] text-neutral-400">
-                  Rest Time
-                </span>
-                <span className="block text-sm font-semibold leading-none text-neutral-900">{restTimerTime}</span>
-              </span>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+              ) : (
+                initial
+              )}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setProfileOpen((value) => !value)}
-            className="w-9 h-9 overflow-hidden rounded-2xl bg-neutral-100 flex items-center justify-center text-xs font-semibold text-neutral-500"
-            aria-haspopup="menu"
-            aria-expanded={profileOpen}
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
-            ) : (
-              initial
-            )}
-          </button>
-          {profileOpen && (
-            <div className="absolute right-5 top-14 z-50 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl" role="menu">
-              <div className="px-3 py-2">
-                <p className="truncate text-sm font-semibold text-neutral-900">{firstName}</p>
-                <p className="truncate text-xs text-neutral-500">{user?.email}</p>
-              </div>
-              <div className="my-1 h-px bg-neutral-100" />
-              {profileLinks.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setProfileOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            {profileOpen && (
+              <div className="absolute right-5 top-14 z-50 w-64 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl" role="menu">
+                <div className="px-3 py-2">
+                  <p className="truncate text-sm font-semibold text-neutral-900">{firstName}</p>
+                  <p className="truncate text-xs text-neutral-500">{user?.email}</p>
+                </div>
+                <div className="my-1 h-px bg-neutral-100" />
+                {profileLinks.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setProfileOpen(false)}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                    role="menuitem"
+                  >
+                    <item.icon className="h-4 w-4 text-neutral-400" />
+                    {item.label}
+                  </Link>
+                ))}
+                <button
+                  onClick={() => logout()}
+                  className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50"
                   role="menuitem"
                 >
-                  <item.icon className="h-4 w-4 text-neutral-400" />
-                  {item.label}
-                </Link>
-              ))}
-              <button
-                onClick={() => logout()}
-                className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50"
-                role="menuitem"
-              >
-                <LogOut className="h-4 w-4" />
-                Log out
-              </button>
-            </div>
-          )}
-        </div>
-        {restTimerHeader && (
-          <div
-            className={`grid px-3 transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none ${
-              restTimerExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
-            }`}
-          >
-            <div className="overflow-hidden">
-              <div className="mb-3 rounded-[1.65rem] border border-white/80 bg-white/95 p-4 shadow-[0_24px_55px_-36px_rgba(29,29,31,0.9)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center text-blue-600">
-                      <RestProgressRing seconds={restTimerSeconds} duration={restTimerDuration} size={62} strokeWidth={4} />
-                      <span className="absolute text-[10px] font-bold uppercase tracking-[0.12em] text-blue-600">
-                        Rest
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-400">Rest Time</p>
-                      <p className="mt-0.5 text-4xl font-semibold leading-none tracking-tight text-neutral-950">
-                        {restTimerTime}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRestTimerExpanded(false)}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 transition-colors hover:bg-neutral-200 hover:text-neutral-900"
-                    aria-label="Collapse rest timer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="mt-4 rounded-2xl bg-neutral-50 px-3 py-2">
-                  <p className="truncate text-sm font-medium text-neutral-900">{restTimerStatus}</p>
-                  <p className="mt-0.5 truncate text-sm text-neutral-500">{restTimerNext}</p>
-                </div>
-
-                <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
-                  {restTimerActions.map((item) => (
-                    <button
-                      key={`${item.action}-${item.seconds || item.label}`}
-                      type="button"
-                      onClick={() => dispatchRestTimerAction(item.action, { seconds: item.seconds })}
-                      className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors ${
-                        item.primary
-                          ? "bg-blue-600 text-white shadow-[0_12px_28px_-18px_rgba(37,99,235,0.9)]"
-                          : "bg-white text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50"
-                      }`}
-                    >
-                      <item.icon className={`h-4 w-4 ${item.action === "toggle" && !restTimerHeader.running ? "fill-current" : ""}`} />
-                      {item.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setRestTimerExpanded(false)}
-                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-white px-3 text-sm font-semibold text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50"
-                  >
-                    <ChevronUp className="h-4 w-4" />
-                    Collapse
-                  </button>
-                </div>
+                  <LogOut className="h-4 w-4" />
+                  Log out
+                </button>
               </div>
-            </div>
+            )}
           </div>
         )}
       </header>

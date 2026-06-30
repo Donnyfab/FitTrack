@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { getUserFirstName } from "@/lib/userDisplay";
@@ -8,36 +8,25 @@ import {
   formatDate,
   formatDateLong,
 } from "@/lib/workoutUtils";
+import { countSets } from "@/lib/fittrackDemoData";
 import {
-  countSets,
-} from "@/lib/fittrackDemoData";
-import {
-  createWorkoutDraftFromTemplate,
   formatDuration,
-  formatSetPerformance,
   getCompletedSetCount,
-  getHumanWorkoutMetric,
-  getLatestPR,
   getNextScheduledWorkout,
   getRemainingSetCount,
-  getWeeklySetSummary,
   getWorkoutDurationMinutes,
-  writeWorkoutDraft,
 } from "@/lib/trainingInsights";
-import StatCard from "@/components/StatCard";
 import {
-  Activity,
   ArrowRight,
+  BookOpen,
   CalendarDays,
-  CheckCircle2,
+  ChevronRight,
   Dumbbell,
   Flame,
-  HeartPulse,
+  History,
+  Layers3,
   Play,
-  Plus,
-  RotateCcw,
-  TrendingUp,
-  Trophy,
+  Sparkles,
 } from "lucide-react";
 
 function getGreeting() {
@@ -54,322 +43,392 @@ function startOfWeek(date) {
   return next;
 }
 
-function getPeriodRange(period, today) {
-  const start = new Date(today);
-  const end = new Date(today);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+function isCompleted(workout) {
+  return (workout?.status || "completed") === "completed";
+}
 
-  if (period === "last-week") {
-    start.setDate(start.getDate() - start.getDay() - 7);
-    end.setDate(start.getDate() + 6);
-  } else if (period === "this-month") {
-    start.setDate(1);
-  } else {
-    start.setDate(start.getDate() - start.getDay());
+function getWorkoutSetStats(workout) {
+  if (!workout) {
+    return { completed: 0, total: 0, remaining: 0, percent: 0 };
   }
 
-  return { start, end };
+  const total = countSets(workout);
+  const completed = getCompletedSetCount(workout);
+  const remaining = Math.max(total - completed, 0);
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  return { completed, total, remaining, percent };
+}
+
+function getRemainingExerciseCount(workout) {
+  if (!Array.isArray(workout?.exercises)) return 0;
+  return workout.exercises.filter((exercise) => {
+    const sets = Array.isArray(exercise.sets) ? exercise.sets : [];
+    if (sets.length === 0) return true;
+    return sets.some((set) => !set.completed);
+  }).length;
+}
+
+function getEstimatedCalories(workout) {
+  if (!workout) return null;
+  const savedCalories = Number(workout.calories);
+  if (savedCalories > 0) return savedCalories;
+
+  const duration = getWorkoutDurationMinutes(workout);
+  const sets = countSets(workout);
+  if (!duration && !sets) return null;
+
+  return Math.max(90, Math.round((duration || 25) * 5.5 + sets * 5));
+}
+
+function getWorkoutSubtitle(workout) {
+  if (!workout) return "No scheduled workout";
+  const groups = workout.muscleGroup || "Workout";
+  const exerciseCount = Array.isArray(workout.exercises) ? workout.exercises.length : 0;
+  return `${groups}${exerciseCount ? ` · ${exerciseCount} exercise${exerciseCount !== 1 ? "s" : ""}` : ""}`;
+}
+
+function getWorkoutHref(workout) {
+  return workout?.id ? `/workouts/${workout.id}` : "/workouts/new";
+}
+
+function getDashboardWorkout(workouts, todayKey) {
+  const todayWorkouts = workouts.filter((workout) => workout.date === todayKey && workout.status !== "missed");
+  const activeToday = todayWorkouts.find((workout) => getRemainingSetCount(workout) > 0);
+  if (activeToday) return activeToday;
+
+  const overdueActive = workouts.find(
+    (workout) =>
+      ["planned", "scheduled"].includes(workout.status) &&
+      workout.date <= todayKey &&
+      getRemainingSetCount(workout) > 0
+  );
+  if (overdueActive) return overdueActive;
+
+  return getNextScheduledWorkout(workouts) || todayWorkouts[0] || null;
+}
+
+function EmptyHero() {
+  return (
+    <section className="rounded-[2rem] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-neutral-100 sm:p-7">
+      <div className="flex h-full min-h-[232px] flex-col justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+            Today&apos;s workout
+          </p>
+          <h2 className="mt-4 max-w-sm text-4xl font-semibold leading-[0.98] tracking-tight text-neutral-950">
+            Plan today&apos;s workout
+          </h2>
+          <p className="mt-3 max-w-md text-base leading-6 text-neutral-500">
+            No workout is scheduled right now. Build one or pick a template when you are ready.
+          </p>
+        </div>
+        <Link
+          to="/workouts/new"
+          className="mt-6 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[1.35rem] bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)] transition hover:bg-blue-500 active:scale-[0.99] sm:w-auto sm:min-w-56"
+        >
+          <Play className="h-4 w-4 fill-white" />
+          Start Workout
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function WorkoutHero({ workout }) {
+  const stats = getWorkoutSetStats(workout);
+  const hasStarted = stats.completed > 0 && stats.remaining > 0;
+  const isFinished = stats.total > 0 && stats.remaining === 0 && stats.completed > 0;
+  const remainingExercises = getRemainingExerciseCount(workout);
+  const duration = getWorkoutDurationMinutes(workout);
+  const calories = getEstimatedCalories(workout);
+  const ctaLabel = hasStarted ? "Resume Workout" : isFinished ? "Review Workout" : "Start Workout";
+
+  if (!workout) return <EmptyHero />;
+
+  return (
+    <section className="relative overflow-hidden rounded-[2rem] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ring-1 ring-neutral-100 sm:p-7">
+      <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-blue-100/80 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-28 left-10 h-44 w-44 rounded-full bg-sky-50 blur-3xl" />
+
+      {hasStarted || isFinished ? (
+        <div className="relative flex min-h-[232px] flex-col justify-between">
+          <div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                  Workout progress
+                </p>
+                <h2 className="mt-4 text-4xl font-semibold leading-[0.98] tracking-tight text-neutral-950">
+                  {stats.percent}%
+                </h2>
+              </div>
+              <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+                {stats.completed}/{stats.total}
+              </div>
+            </div>
+
+            <div className="mt-5 h-3 overflow-hidden rounded-full bg-neutral-100">
+              <div
+                className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                style={{ width: `${Math.min(stats.percent, 100)}%` }}
+              />
+            </div>
+            <p className="mt-4 text-lg font-semibold text-neutral-950">{workout.name}</p>
+            <p className="mt-2 text-base leading-6 text-neutral-500">
+              {remainingExercises} exercise{remainingExercises !== 1 ? "s" : ""} remaining ·{" "}
+              {stats.remaining} set{stats.remaining !== 1 ? "s" : ""} remaining
+            </p>
+          </div>
+
+          <Link
+            to={getWorkoutHref(workout)}
+            className="mt-6 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[1.35rem] bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)] transition hover:bg-blue-500 active:scale-[0.99]"
+          >
+            <Play className="h-4 w-4 fill-white" />
+            {ctaLabel}
+          </Link>
+        </div>
+      ) : (
+        <div className="relative flex min-h-[232px] flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+              Today&apos;s workout
+            </p>
+            <h2 className="mt-4 max-w-md text-4xl font-semibold leading-[0.98] tracking-tight text-neutral-950">
+              {workout.name}
+            </h2>
+            <p className="mt-3 text-base leading-6 text-neutral-500">{getWorkoutSubtitle(workout)}</p>
+
+            <div className="mt-6 grid grid-cols-3 divide-x divide-neutral-200 rounded-2xl bg-neutral-50/80 py-4">
+              <div className="px-3">
+                <p className="text-lg font-semibold tabular-nums text-neutral-950">
+                  {duration ? formatDuration(duration) : "—"}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+                  Est. time
+                </p>
+              </div>
+              <div className="px-3">
+                <p className="text-lg font-semibold tabular-nums text-neutral-950">{stats.total || "—"}</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+                  Planned
+                </p>
+              </div>
+              <div className="px-3">
+                <p className="text-lg font-semibold tabular-nums text-neutral-950">
+                  {calories ? calories.toLocaleString() : "—"}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+                  Est. burn
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <Link
+            to={getWorkoutHref(workout)}
+            className="mt-6 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[1.35rem] bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-[0_16px_34px_rgba(37,99,235,0.28)] transition hover:bg-blue-500 active:scale-[0.99]"
+          >
+            <Play className="h-4 w-4 fill-white" />
+            {ctaLabel}
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CompactStat({ icon: Icon, label, value, sublabel, progress }) {
+  return (
+    <div className="rounded-[1.6rem] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-neutral-100">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-neutral-500">{label}</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight text-neutral-950">{value}</p>
+        </div>
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-neutral-50 text-neutral-500">
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+      {progress != null && (
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-neutral-100">
+          <div
+            className="h-full rounded-full bg-blue-600 transition-all duration-500"
+            style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }}
+          />
+        </div>
+      )}
+      <p className="mt-2 text-sm text-neutral-500">{sublabel}</p>
+    </div>
+  );
+}
+
+function QuickAction({ to, icon: Icon, label }) {
+  return (
+    <Link
+      to={to}
+      className="group flex min-h-24 flex-col items-center justify-center rounded-[1.35rem] bg-white p-3 text-center shadow-[0_14px_34px_rgba(15,23,42,0.05)] ring-1 ring-neutral-100 transition hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(15,23,42,0.08)] active:scale-[0.99]"
+    >
+      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="mt-3 text-sm font-semibold leading-tight text-neutral-900">{label}</span>
+    </Link>
+  );
+}
+
+function RecentWorkoutSection({ workout }) {
+  if (!workout) {
+    return (
+      <section className="rounded-[1.6rem] bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-neutral-100">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-base font-semibold text-neutral-950">Weekly activity</p>
+            <p className="mt-2 text-sm text-neutral-500">Your completed workouts will appear here.</p>
+          </div>
+          <CalendarDays className="h-5 w-5 text-neutral-400" />
+        </div>
+      </section>
+    );
+  }
+
+  const completedSets = getCompletedSetCount(workout);
+  const exerciseCount = Array.isArray(workout.exercises) ? workout.exercises.length : 0;
+
+  return (
+    <section className="rounded-[1.6rem] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] ring-1 ring-neutral-100">
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <h2 className="text-base font-semibold text-neutral-950">Recent workout</h2>
+        <Link
+          to="/workouts"
+          className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 transition hover:text-blue-500"
+        >
+          View all <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+      <Link
+        to={getWorkoutHref(workout)}
+        className="flex items-center justify-between gap-4 rounded-[1.25rem] bg-neutral-50 p-3.5 transition hover:bg-neutral-100"
+      >
+        <div className="min-w-0">
+          <p className="truncate text-lg font-semibold text-neutral-950">{workout.name}</p>
+          <p className="mt-1 text-sm text-neutral-500">{formatDate(workout.date)}</p>
+          <p className="mt-3 text-sm font-medium text-neutral-600">
+            {formatDuration(getWorkoutDurationMinutes(workout))} · {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""} ·{" "}
+            {completedSets} set{completedSets !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <ChevronRight className="h-5 w-5 shrink-0 text-neutral-400" />
+      </Link>
+    </section>
+  );
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const { user, settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
-  const [goals, setGoals] = useState([]);
-  const [bodyStats, setBodyStats] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState("this-week");
-  const [metricTick, setMetricTick] = useState(0);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  useEffect(() => {
-    const interval = window.setInterval(() => setMetricTick((value) => value + 1), 8000);
-    return () => window.clearInterval(interval);
-  }, []);
-
   const loadData = async () => {
     try {
-      const [w, g, b] = await Promise.all([
-        base44.entities.Workout.list("-date", 100),
-        base44.entities.Goal.filter({ status: "active" }, "-created_date", 10),
-        base44.entities.BodyStat.list("-recorded_at", 12),
-      ]);
+      const w = await base44.entities.Workout.list("-date", 100);
       setWorkouts(w);
-      setGoals(g);
-      setBodyStats(b);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
+  const today = new Date();
+  const todayKey = today.toISOString().split("T")[0];
+  const weekStart = startOfWeek(today);
+  const firstName = getUserFirstName(user, "there");
+  const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
+
+  const weeklyWorkouts = useMemo(
+    () =>
+      workouts.filter((workout) => {
+        const date = new Date(`${workout.date}T00:00:00`);
+        return isCompleted(workout) && date >= weekStart && date <= today;
+      }),
+    [workouts, weekStart, today]
+  );
+
+  const dashboardWorkout = useMemo(
+    () => getDashboardWorkout(workouts, todayKey),
+    [workouts, todayKey]
+  );
+  const lastCompletedWorkout = workouts.find((workout) => isCompleted(workout));
+  const streak = calculateStreak(workouts);
+  const weeklyProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
+
   if (loading) {
     return (
-      <div className="animate-pulse">
-        <div className="h-7 w-56 bg-neutral-100 rounded-lg mb-2" />
-        <div className="h-4 w-32 bg-neutral-50 rounded-lg mb-8" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 bg-neutral-50 rounded-2xl" />
-          ))}
+      <div className="mx-auto max-w-5xl animate-pulse space-y-5">
+        <div className="h-10 w-72 rounded-2xl bg-neutral-100" />
+        <div className="h-72 rounded-[2rem] bg-neutral-100" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-36 rounded-[1.6rem] bg-neutral-100" />
+          <div className="h-36 rounded-[1.6rem] bg-neutral-100" />
         </div>
       </div>
     );
   }
 
-  const today = new Date();
-  const todayKey = today.toISOString().split("T")[0];
-  const weekStart = startOfWeek(today);
-  const { start: periodStart, end: periodEnd } = getPeriodRange(period, today);
-  const periodWorkouts = workouts.filter((workout) => {
-    const date = new Date(`${workout.date}T00:00:00`);
-    return date >= periodStart && date <= periodEnd;
-  });
-  const completedPeriodWorkouts = periodWorkouts.filter((workout) => (workout.status || "completed") === "completed");
-  const weeklyWorkouts = workouts.filter((workout) => {
-    const date = new Date(`${workout.date}T00:00:00`);
-    return (workout.status || "completed") === "completed" && date >= weekStart && date <= today;
-  });
-  const caloriesBurned = periodWorkouts.reduce((sum, workout) => sum + (Number(workout.calories) || 0), 0);
-  const streak = calculateStreak(workouts);
-  const weeklyGoal = Number(settings?.weekly_workout_goal) || 5;
-  const goalProgress = Math.min(100, Math.round((weeklyWorkouts.length / weeklyGoal) * 100));
-  const todayWorkout = workouts.find((workout) => workout.date === todayKey && workout.status !== "missed");
-  const activeWorkout = workouts.find((workout) => ["planned", "scheduled"].includes(workout.status) && workout.date <= todayKey);
-  const lastCompletedWorkout = workouts.find((workout) => (workout.status || "completed") === "completed");
-  const nextScheduledWorkout = getNextScheduledWorkout(workouts);
-  const weeklySets = getWeeklySetSummary(workouts, weekStart, today);
-  const humanMetric = getHumanWorkoutMetric(workouts, periodWorkouts, weeklySets, nextScheduledWorkout, metricTick);
-  const latestPr = getLatestPR(workouts);
-  const recentWorkouts = periodWorkouts.slice(0, 4);
-  const latestBodyStat = bodyStats[0];
-  const firstName = getUserFirstName(user, "there");
-  const repeatWorkout = (source) => {
-    const draft = createWorkoutDraftFromTemplate(source, {
-      date: todayKey,
-      status: "planned",
-      notes: source?.name ? `Repeated from ${source.name}.` : "",
-    });
-    writeWorkoutDraft(draft);
-    navigate("/workouts/new");
-  };
-
   return (
-    <div className="animate-fade-in space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">
-            {getGreeting()}, {firstName}
-          </h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            {formatDateLong(todayKey)} · Welcome back to FitTrack
-          </p>
-        </div>
-        <select
-          value={period}
-          onChange={(event) => setPeriod(event.target.value)}
-          className="h-10 w-full sm:w-40 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 focus:outline-none focus:border-neutral-400"
-          aria-label="Dashboard time period"
-        >
-          <option value="this-week">This Week</option>
-          <option value="last-week">Last Week</option>
-          <option value="this-month">This Month</option>
-        </select>
-      </div>
+    <div className="mx-auto max-w-5xl animate-fade-in space-y-4 pb-4">
+      <header className="pt-1">
+        <h1 className="max-w-3xl text-[2.35rem] font-semibold leading-[0.98] tracking-tight text-neutral-950 sm:text-5xl">
+          {getGreeting()}, {firstName}
+        </h1>
+        <p className="mt-2 text-base font-medium text-neutral-500">
+          {formatDateLong(todayKey)}
+        </p>
+      </header>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4">
-        <StatCard icon={Dumbbell} label={period === "this-week" ? "Workouts this week" : "Workouts"} value={`${completedPeriodWorkouts.length}${period === "this-week" ? ` / ${weeklyGoal}` : ""}`} sublabel="Completed sessions" />
-        <StatCard icon={TrendingUp} label={humanMetric.title} value={humanMetric.value} sublabel={humanMetric.sublabel} />
-        <StatCard icon={Flame} label="Current streak" value={`${streak} day${streak !== 1 ? "s" : ""}`} sublabel={streak > 0 ? "Keep it steady" : "Start today"} />
-        <StatCard icon={Activity} label="Calories burned" value={caloriesBurned ? caloriesBurned.toLocaleString() : "—"} sublabel={caloriesBurned ? "Estimated" : "Not tracked yet"} />
-      </div>
+      <WorkoutHero workout={dashboardWorkout} />
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <section className="grid grid-cols-2 gap-3">
+        <CompactStat
+          icon={Flame}
+          label="Current streak"
+          value={`${streak} day${streak !== 1 ? "s" : ""}`}
+          sublabel={streak > 0 ? "Keep it going" : "Start today"}
+        />
+        <CompactStat
+          icon={Dumbbell}
+          label="This week"
+          value={`${weeklyWorkouts.length} / ${weeklyGoal}`}
+          sublabel="Weekly progress"
+          progress={weeklyProgress}
+        />
+      </section>
+
+      <section className="grid grid-cols-3 gap-3" aria-label="Quick actions">
+        <QuickAction to="/exercise" icon={BookOpen} label="Exercise Library" />
+        <QuickAction to="/workouts?tab=templates" icon={Layers3} label="Workout Templates" />
+        <QuickAction to="/workouts" icon={History} label="History" />
+      </section>
+
+      <RecentWorkoutSection workout={lastCompletedWorkout} />
+
+      {!dashboardWorkout && workouts.length === 0 && (
         <Link
-          to={activeWorkout ? `/workouts/${activeWorkout.id}` : todayWorkout ? `/workouts/${todayWorkout.id}` : "/workouts/new"}
-          className="rounded-2xl border border-neutral-200 bg-white p-4 transition-all hover:shadow-sm"
+          to="/workouts/new"
+          className="flex items-center justify-between rounded-[1.6rem] bg-blue-50 p-5 text-blue-700 ring-1 ring-blue-100 transition hover:bg-blue-100"
         >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-neutral-900">Continue where you left off</p>
-            <CheckCircle2 className="h-4 w-4 text-neutral-400" />
-          </div>
-          <p className="mt-2 text-sm text-neutral-500">
-            {activeWorkout || todayWorkout
-              ? `${(activeWorkout || todayWorkout).name} · ${getRemainingSetCount(activeWorkout || todayWorkout)} sets left`
-              : "Start or schedule the next workout."}
-          </p>
+          <span className="flex items-center gap-3 text-sm font-semibold">
+            <Sparkles className="h-5 w-5" />
+            Build your first routine
+          </span>
+          <ArrowRight className="h-4 w-4" />
         </Link>
-        <button
-          type="button"
-          onClick={() => lastCompletedWorkout ? repeatWorkout(lastCompletedWorkout) : navigate("/workouts/new")}
-          className="rounded-2xl border border-neutral-200 bg-white p-4 text-left transition-all hover:shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-neutral-900">Repeat last workout</p>
-            <RotateCcw className="h-4 w-4 text-neutral-400" />
-          </div>
-          <p className="mt-2 text-sm text-neutral-500">
-            {lastCompletedWorkout ? `${lastCompletedWorkout.name} · ${getCompletedSetCount(lastCompletedWorkout)} completed sets` : "Create a routine to repeat later."}
-          </p>
-        </button>
-        <Link to="/progress" className="rounded-2xl border border-neutral-200 bg-white p-4 transition-all hover:shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-neutral-900">Latest PR</p>
-            <Trophy className="h-4 w-4 text-neutral-400" />
-          </div>
-          <p className="mt-2 text-sm text-neutral-500">
-            {latestPr?.pr
-              ? `${latestPr.pr.exercise}: ${formatSetPerformance(latestPr.pr)}`
-              : "Beat a previous best set to log a PR."}
-          </p>
-        </Link>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Today&apos;s Workout</p>
-              <h2 className="text-xl font-semibold text-neutral-900 tracking-tight mt-2">
-                {todayWorkout?.name || "No workout scheduled"}
-              </h2>
-              <p className="text-sm text-neutral-500 mt-1">
-                {todayWorkout
-                  ? `${todayWorkout.muscleGroup || "Workout"} · ${getCompletedSetCount(todayWorkout)} / ${countSets(todayWorkout)} sets`
-                  : "Schedule or start a workout when you are ready."}
-              </p>
-            </div>
-            <Link
-              to={todayWorkout ? `/workouts/${todayWorkout.id}` : "/workouts/new"}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
-            >
-              {todayWorkout ? <Play className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {todayWorkout ? "Start Workout" : "New Workout"}
-            </Link>
-          </div>
-          <div className="mt-5 rounded-xl bg-neutral-50 p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-neutral-900">Next step</span>
-              <span className="text-neutral-500">
-                {todayWorkout
-                  ? `${getRemainingSetCount(todayWorkout)} sets left · ${formatDuration(getWorkoutDurationMinutes(todayWorkout))}`
-                  : nextScheduledWorkout
-                    ? `Upcoming: ${nextScheduledWorkout.name}`
-                    : "Create a workout from your plan."}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Weekly Goal</p>
-              <h2 className="text-lg font-semibold text-neutral-900 mt-2">{weeklyWorkouts.length} / {weeklyGoal} workouts</h2>
-            </div>
-            <CalendarDays className="w-5 h-5 text-neutral-300" />
-          </div>
-          <div className="h-2 rounded-full bg-neutral-100 overflow-hidden">
-            <div className="h-full rounded-full bg-neutral-900" style={{ width: `${goalProgress}%` }} />
-          </div>
-          <p className="mt-3 text-sm text-neutral-500">
-            {weeklyWorkouts.length >= weeklyGoal
-              ? "Goal complete. Keep recovery on the plan."
-              : `${Math.max(weeklyGoal - weeklyWorkouts.length, 0)} workout${weeklyGoal - weeklyWorkouts.length !== 1 ? "s" : ""} left to close the week.`}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-neutral-900">Recent Workouts</h2>
-            <Link to="/workouts" className="text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors flex items-center gap-1">
-              View all <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-          <div className="divide-y divide-neutral-100">
-            {recentWorkouts.length > 0 ? (
-              recentWorkouts.map((workout) => (
-                <Link
-                  key={workout.id}
-                  to={`/workouts/${workout.id}`}
-                  className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-neutral-900 truncate">{workout.name}</p>
-                    <p className="text-xs text-neutral-500 mt-1">{formatDate(workout.date)}{workout.muscleGroup ? ` · ${workout.muscleGroup}` : ""}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-neutral-900">{getCompletedSetCount(workout)} / {countSets(workout)}</p>
-                    <p className="text-xs text-neutral-500">{formatDuration(getWorkoutDurationMinutes(workout))}</p>
-                  </div>
-                </Link>
-              ))
-            ) : (
-              <div className="py-8 text-center">
-                <Dumbbell className="w-7 h-7 text-neutral-300 mx-auto mb-2" />
-                <p className="text-sm font-medium text-neutral-900">No workouts logged yet</p>
-                <p className="text-xs text-neutral-500 mt-1">Your recent workouts will appear here after you log them.</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-neutral-900">Body Stats</h2>
-            <HeartPulse className="w-4 h-4 text-neutral-300" />
-          </div>
-          {latestBodyStat ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-neutral-50 p-3">
-                <p className="text-xs text-neutral-500">Weight</p>
-                <p className="text-xl font-semibold text-neutral-900 mt-1">
-                  {latestBodyStat.weight == null ? "—" : `${latestBodyStat.weight} lb`}
-                </p>
-              </div>
-              <div className="rounded-xl bg-neutral-50 p-3">
-                <p className="text-xs text-neutral-500">Body fat</p>
-                <p className="text-xl font-semibold text-neutral-900 mt-1">
-                  {latestBodyStat.bodyFatPercentage == null ? "—" : `${latestBodyStat.bodyFatPercentage}%`}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-xl bg-neutral-50 p-5 text-center">
-              <p className="text-sm font-medium text-neutral-900">No body stats recorded</p>
-              <p className="text-xs text-neutral-500 mt-1">Weight and body fat trends will appear after you add body stats.</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {goals.length > 0 && (
-        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-neutral-900">Active Goal Focus</h2>
-            <Link to="/goals" className="text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors">
-              Manage goals
-            </Link>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-            {goals.slice(0, 4).map((goal) => (
-              <div key={goal.id} className="rounded-xl border border-neutral-200 p-4">
-                <p className="font-medium text-neutral-900 truncate">{goal.title}</p>
-                <div className="mt-3 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
-                  <div className="h-full rounded-full bg-neutral-900" style={{ width: `${goal.progress || 0}%` }} />
-                </div>
-                <p className="mt-2 text-xs text-neutral-500">{goal.progress || 0}% complete</p>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
     </div>
   );

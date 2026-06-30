@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { formatDate } from "@/lib/workoutUtils";
@@ -32,12 +32,20 @@ import {
 
 const tabs = ["All Workouts", "Favorites", "Templates"];
 
+function getTabFromQuery(tab) {
+  if (tab === "favorites") return "Favorites";
+  if (tab === "templates") return "Templates";
+  return "All Workouts";
+}
+
 export default function Workouts() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
   const { settings } = useAuth();
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("All Workouts");
+  const [activeTab, setActiveTab] = useState(() => getTabFromQuery(tabParam));
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [muscleFilter, setMuscleFilter] = useState("All");
@@ -48,6 +56,10 @@ export default function Workouts() {
   useEffect(() => {
     loadWorkouts();
   }, []);
+
+  useEffect(() => {
+    setActiveTab(getTabFromQuery(tabParam));
+  }, [tabParam]);
 
   const loadWorkouts = async () => {
     try {

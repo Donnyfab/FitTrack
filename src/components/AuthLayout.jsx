@@ -1,9 +1,21 @@
 import React from "react";
+import { Link } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 
 export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
+        <div className="mb-8 flex justify-start">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/85 px-4 py-2 text-sm font-medium text-neutral-600 shadow-sm backdrop-blur transition hover:border-neutral-300 hover:text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            aria-label="Back to FitTrack landing page"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to FitTrack
+          </Link>
+        </div>
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-neutral-900 mb-5">
             <Icon className="w-5 h-5 text-white" aria-hidden="true" />

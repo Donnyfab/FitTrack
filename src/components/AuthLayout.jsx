@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import FitTrackLogo from "@/components/FitTrackLogo";
 
 export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
   return (
@@ -9,11 +9,10 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
         <div className="mb-8 flex justify-start">
           <Link
             to="/"
-            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/85 px-4 py-2 text-sm font-medium text-neutral-600 shadow-sm backdrop-blur transition hover:border-neutral-300 hover:text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            className="inline-flex rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             aria-label="Back to FitTrack landing page"
           >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Back to FitTrack
+            <FitTrackLogo />
           </Link>
         </div>
         <div className="text-center mb-10">

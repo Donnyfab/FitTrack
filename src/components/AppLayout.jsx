@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/workouts", label: "Workouts", icon: Dumbbell, end: false },
   { to: "/exercise", label: "Exercise", icon: Activity, end: false },
   { to: "/goals", label: "Goals", icon: Target, end: false },
@@ -28,7 +28,7 @@ const navItems = [
 ];
 
 const mobileNavItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/workouts", label: "Workouts", icon: Dumbbell, end: false },
   { to: "/workouts/new", label: "Start", icon: CirclePlus, end: true },
   { to: "/progress", label: "Progress", icon: TrendingUp, end: false },

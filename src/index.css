@@ -100,11 +100,6 @@
 }
 
 @layer base {
-  html {
-    touch-action: pan-x pan-y;
-    -webkit-text-size-adjust: 100%;
-  }
-
   * {
     @apply border-border outline-ring/50;
   }
@@ -160,15 +155,8 @@
   input,
   select,
   textarea {
-    touch-action: manipulation;
     transition-duration: 220ms;
     transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  input,
-  select,
-  textarea {
-    font-size: 16px;
   }
 
   button:active,

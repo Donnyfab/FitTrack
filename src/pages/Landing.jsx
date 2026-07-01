@@ -19,7 +19,6 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
-import FitTrackLogo from "@/components/FitTrackLogo";
 
 const previewModes = [
   {
@@ -112,6 +111,21 @@ function usePrefersReducedMotion() {
   return reducedMotion;
 }
 
+function LogoMark({ compact = false }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        className={`grid place-items-center rounded-2xl bg-[#1778f2] text-white shadow-[0_18px_45px_-24px_rgba(23,120,242,0.9)] ${
+          compact ? "h-10 w-10" : "h-12 w-12"
+        }`}
+      >
+        <Dumbbell className={compact ? "h-4 w-4" : "h-5 w-5"} strokeWidth={2.4} />
+      </div>
+      <span className="text-xl font-semibold tracking-tight text-neutral-950">FitTrack</span>
+    </div>
+  );
+}
+
 function SectionHeader({ eyebrow, title, description }) {
   return (
     <div className="landing-reveal mx-auto max-w-3xl text-center">
@@ -178,7 +192,7 @@ function ProductPreview({ activeMode, setActiveMode, reducedMotion }) {
       <div className="rounded-[2.4rem] border border-white/80 bg-white/80 p-3 shadow-[0_35px_90px_-55px_rgba(29,29,31,0.55)] backdrop-blur-xl">
         <div className="overflow-hidden rounded-[1.9rem] border border-neutral-100 bg-[#f7f8fb]">
           <div className="flex items-center justify-between border-b border-neutral-200/70 bg-white/80 px-5 py-4">
-            <FitTrackLogo compact />
+            <LogoMark compact />
             <div className="h-10 w-10 overflow-hidden rounded-full bg-gradient-to-br from-[#1778f2] to-[#9da7ff]">
               <div className="h-full w-full bg-[radial-gradient(circle_at_55%_35%,rgba(255,255,255,0.55),transparent_28%)]" />
             </div>
@@ -423,7 +437,7 @@ function Landing() {
     <main ref={rootRef} className="min-h-screen overflow-hidden bg-[#f6f8fb] text-neutral-950">
       <header className="sticky top-0 z-40 border-b border-white/70 bg-white/75 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-          <FitTrackLogo />
+          <LogoMark />
           <nav className="hidden items-center gap-8 text-sm font-medium text-neutral-600 md:flex">
             <a href="#ai-planner" className="transition hover:text-neutral-950">
               AI planner

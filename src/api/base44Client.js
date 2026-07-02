@@ -16,12 +16,18 @@ const FILTER_COLUMN_MAP = {
   muscleGroup: 'muscle_group',
   isFavorite: 'is_favorite',
   isCustom: 'is_custom',
+  apiSource: 'api_source',
+  apiExerciseId: 'api_exercise_id',
   recordedAt: 'recorded_at',
   dayOfWeek: 'day_of_week',
   templateWorkoutId: 'template_workout_id',
   recurringScheduleId: 'recurring_schedule_id',
   scheduledFor: 'scheduled_for',
 };
+
+function listFromDb(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
 
 function parseSort(sortStr) {
   if (!sortStr) return { column: 'created_at', ascending: false };
@@ -99,6 +105,7 @@ function mapUserExercise(row) {
   if (!row) return row;
   return {
     id: row.id,
+    userId: row.user_id,
     name: row.name,
     muscleGroup: row.muscle_group,
     equipment: row.equipment,
@@ -106,6 +113,16 @@ function mapUserExercise(row) {
     tip: row.form_tips,
     favorite: Boolean(row.is_favorite),
     custom: Boolean(row.is_custom),
+    apiSource: row.api_source,
+    apiExerciseId: row.api_exercise_id,
+    imageUrl: row.image_url,
+    videoUrl: row.video_url,
+    gifUrl: row.gif_url,
+    bodyParts: listFromDb(row.body_parts),
+    targetMuscles: listFromDb(row.target_muscles),
+    secondaryMuscles: listFromDb(row.secondary_muscles),
+    instructions: listFromDb(row.instructions),
+    overview: row.overview,
     created_date: row.created_at,
   };
 }
@@ -119,6 +136,16 @@ function toDbUserExercise(data) {
   if ('tip' in data) row.form_tips = data.tip || null;
   if ('favorite' in data) row.is_favorite = Boolean(data.favorite);
   if ('custom' in data) row.is_custom = Boolean(data.custom);
+  if ('apiSource' in data) row.api_source = data.apiSource || null;
+  if ('apiExerciseId' in data) row.api_exercise_id = data.apiExerciseId || null;
+  if ('imageUrl' in data) row.image_url = data.imageUrl || null;
+  if ('videoUrl' in data) row.video_url = data.videoUrl || null;
+  if ('gifUrl' in data) row.gif_url = data.gifUrl || null;
+  if ('bodyParts' in data) row.body_parts = Array.isArray(data.bodyParts) ? data.bodyParts : [];
+  if ('targetMuscles' in data) row.target_muscles = Array.isArray(data.targetMuscles) ? data.targetMuscles : [];
+  if ('secondaryMuscles' in data) row.secondary_muscles = Array.isArray(data.secondaryMuscles) ? data.secondaryMuscles : [];
+  if ('instructions' in data) row.instructions = Array.isArray(data.instructions) ? data.instructions : [];
+  if ('overview' in data) row.overview = data.overview || null;
   return row;
 }
 
@@ -281,6 +308,113 @@ function createEntity(table, mapRow, toDb) {
   };
 }
 
+function createUserExerciseEntity() {
+  const table = 'user_exercises';
+
+  const applyFilters = (query, filters = {}) => {
+    let nextQuery = query;
+    Object.entries(filters).forEach(([key, value]) => {
+      nextQuery = nextQuery.eq(FILTER_COLUMN_MAP[key] || key, value);
+    });
+    return nextQuery;
+  };
+
+  return {
+    async list(sort, limit = 100) {
+      const userId = await requireUserId();
+      const { column, ascending } = parseSort(sort);
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .or(`user_id.eq.${userId},user_id.is.null`)
+        .order(column, { ascending })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data ?? []).map(mapUserExercise);
+    },
+
+    async filter(filters = {}, sort, limit = 100) {
+      const userId = await requireUserId();
+      const { column, ascending } = parseSort(sort);
+      const query = applyFilters(
+        supabase.from(table).select('*').or(`user_id.eq.${userId},user_id.is.null`),
+        filters
+      );
+
+      const { data, error } = await query
+        .order(column, { ascending })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data ?? []).map(mapUserExercise);
+    },
+
+    async get(id) {
+      const userId = await requireUserId();
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq('id', id)
+        .or(`user_id.eq.${userId},user_id.is.null`)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw { status: 404, message: 'Not found' };
+      return mapUserExercise(data);
+    },
+
+    async create(payload) {
+      const userId = await requireUserId();
+      const { data, error } = await supabase
+        .from(table)
+        .insert({ ...toDbUserExercise(payload), user_id: userId })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return mapUserExercise(data);
+    },
+
+    async upsert(payload, options = {}) {
+      const userId = await requireUserId();
+      const { data, error } = await supabase
+        .from(table)
+        .upsert({ ...toDbUserExercise(payload), user_id: userId }, options)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return mapUserExercise(data);
+    },
+
+    async update(id, payload) {
+      const userId = await requireUserId();
+      const { data, error } = await supabase
+        .from(table)
+        .update(toDbUserExercise(payload))
+        .eq('id', id)
+        .eq('user_id', userId)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return mapUserExercise(data);
+    },
+
+    async delete(id) {
+      const userId = await requireUserId();
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+    },
+  };
+}
+
 const auth = {
   async me() {
     const {
@@ -389,7 +523,7 @@ export const base44 = {
   entities: {
     Workout: createEntity('workouts', mapWorkout, toDbWorkout),
     Goal: createEntity('goals', mapGoal, toDbGoal),
-    UserExercise: createEntity('user_exercises', mapUserExercise, toDbUserExercise),
+    UserExercise: createUserExerciseEntity(),
     BodyStat: createEntity('body_stats', mapBodyStat, toDbBodyStat),
     RecurringSchedule: createEntity('recurring_schedules', mapRecurringSchedule, toDbRecurringSchedule),
   },

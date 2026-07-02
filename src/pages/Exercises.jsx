@@ -12,12 +12,18 @@ import {
 } from "@/lib/trainingInsights";
 import {
   Activity,
+  ArrowLeft,
+  Bookmark,
   Check,
   Dumbbell,
   HeartPulse,
+  ImageIcon,
+  ListChecks,
   Plus,
   Search,
   Star,
+  Target,
+  Video,
   X,
 } from "lucide-react";
 import { equipmentOptions, exerciseCatalog, exerciseCategories } from "@/lib/fittrackDemoData";
@@ -33,6 +39,42 @@ const iconForGroup = (group) => {
   return Dumbbell;
 };
 
+const asList = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
+const hasExerciseMedia = (exercise) => Boolean(exercise?.imageUrl || exercise?.videoUrl || exercise?.gifUrl);
+const hasExerciseApiDetail = (exercise) =>
+  Boolean(
+    exercise?.apiSource &&
+      (hasExerciseMedia(exercise) ||
+        exercise?.overview ||
+        asList(exercise?.instructions).length ||
+        asList(exercise?.targetMuscles).length ||
+        asList(exercise?.secondaryMuscles).length)
+  );
+
+const mergeApiExerciseFields = (exercise, imported) => {
+  if (!imported) return exercise;
+  return {
+    ...exercise,
+    id: imported.id || exercise.id,
+    equipment: imported.equipment || exercise.equipment,
+    icon: imported.icon || exercise.icon,
+    tip: imported.tip || exercise.tip,
+    favorite: imported.favorite ?? exercise.favorite,
+    custom: imported.custom ?? exercise.custom,
+    apiSource: imported.apiSource,
+    apiExerciseId: imported.apiExerciseId,
+    imageUrl: imported.imageUrl,
+    videoUrl: imported.videoUrl,
+    gifUrl: imported.gifUrl,
+    bodyParts: imported.bodyParts,
+    targetMuscles: imported.targetMuscles,
+    secondaryMuscles: imported.secondaryMuscles,
+    instructions: imported.instructions,
+    overview: imported.overview,
+    created_date: imported.created_date || exercise.created_date,
+  };
+};
+
 export default function Exercises() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -40,12 +82,14 @@ export default function Exercises() {
   const [exercises, setExercises] = useState(exerciseCatalog);
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("All");
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeEquipment, setActiveEquipment] = useState("All");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_EXERCISES);
   const [query, setQuery] = useState("");
   const [selectedExercise, setSelectedExercise] = useState(exerciseCatalog[0]);
+  const [detailExercise, setDetailExercise] = useState(null);
   const [selectedForWorkout, setSelectedForWorkout] = useState(() => readSelectedWorkoutExercises());
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", muscleGroup: "Chest", equipment: "Dumbbell", tip: "" });
@@ -59,25 +103,43 @@ export default function Exercises() {
   }, [activeCategory, activeEquipment, activeTab, query]);
 
   const mergeExercises = (savedExercises) => {
-    const savedByName = new Map(savedExercises.map((exercise) => [exercise.name, exercise]));
+    const importedByName = new Map(
+      savedExercises
+        .filter((exercise) => exercise.apiSource && !exercise.userId)
+        .map((exercise) => [exercise.name, exercise])
+    );
+    const userOwnedByName = new Map(
+      savedExercises
+        .filter((exercise) => exercise.userId)
+        .map((exercise) => [exercise.name, exercise])
+    );
     const catalog = exerciseCatalog.map((exercise) => {
-      const saved = savedByName.get(exercise.name);
+      const imported = importedByName.get(exercise.name);
+      const saved = userOwnedByName.get(exercise.name);
+      const mergedImported = mergeApiExerciseFields(exercise, imported);
+      const savedWithApiFields = saved?.apiSource ? mergeApiExerciseFields(mergedImported, saved) : mergedImported;
       return saved
         ? {
-            ...exercise,
+            ...savedWithApiFields,
             id: saved.id,
             favorite: saved.favorite,
             custom: saved.custom,
-            tip: saved.tip || exercise.tip,
+            tip: saved.tip || savedWithApiFields.tip,
             created_date: saved.created_date,
           }
-        : exercise;
+        : mergedImported;
     });
-    const custom = savedExercises.filter((exercise) => !exerciseCatalog.some((item) => item.name === exercise.name));
-    return [...custom, ...catalog];
+    const custom = savedExercises.filter(
+      (exercise) => !exercise.apiSource && !exerciseCatalog.some((item) => item.name === exercise.name)
+    );
+    const importedOnly = savedExercises.filter(
+      (exercise) => exercise.apiSource && !exerciseCatalog.some((item) => item.name === exercise.name)
+    );
+    return [...custom, ...importedOnly, ...catalog];
   };
 
   const loadExercises = async () => {
+    setError(null);
     try {
       const [savedExercises, workoutRows] = await Promise.all([
         base44.entities.UserExercise.list("name", 500),
@@ -87,6 +149,10 @@ export default function Exercises() {
       setExercises(merged);
       setWorkouts(workoutRows);
       setSelectedExercise((current) => merged.find((exercise) => exercise.name === current?.name) || merged[0] || null);
+      setDetailExercise((current) => (current ? merged.find((exercise) => exercise.name === current.name) || null : null));
+    } catch {
+      setExercises(exerciseCatalog);
+      setError("Exercise media could not load. Showing the local library for now.");
     } finally {
       setLoading(false);
     }
@@ -101,7 +167,15 @@ export default function Exercises() {
           (activeTab === "Favorites" && exercise.favorite);
         const matchesCategory = activeCategory === "All" || exercise.muscleGroup === activeCategory;
         const matchesEquipment = activeEquipment === "All" || exercise.equipment === activeEquipment;
-        const matchesQuery = `${exercise.name} ${exercise.muscleGroup} ${exercise.equipment || ""}`
+        const searchable = [
+          exercise.name,
+          exercise.muscleGroup,
+          exercise.equipment,
+          ...asList(exercise.bodyParts),
+          ...asList(exercise.targetMuscles),
+          ...asList(exercise.secondaryMuscles),
+        ].join(" ");
+        const matchesQuery = searchable
           .toLowerCase()
           .includes(query.toLowerCase());
         return matchesTab && matchesCategory && matchesEquipment && matchesQuery;
@@ -140,6 +214,9 @@ export default function Exercises() {
     );
     if (selectedExercise?.name === exerciseName) {
       setSelectedExercise((exercise) => ({ ...exercise, favorite: nextFavorite }));
+    }
+    if (detailExercise?.name === exerciseName) {
+      setDetailExercise((exercise) => ({ ...exercise, favorite: nextFavorite }));
     }
     try {
       await base44.entities.UserExercise.upsert(
@@ -329,26 +406,56 @@ export default function Exercises() {
               Loading exercises...
             </div>
           )}
+          {!loading && error && (
+            <div className="col-span-full rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>{error}</span>
+                <button
+                  type="button"
+                  onClick={loadExercises}
+                  className="h-9 rounded-lg bg-white px-3 text-xs font-semibold text-amber-900 shadow-sm"
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          )}
           {visibleExercises.map((exercise) => {
             const Icon = iconForGroup(exercise.muscleGroup);
             const selected = selectedExercise?.name === exercise.name;
             const queuedForWorkout = selectedForWorkout.includes(exercise.name);
             const lastEntry = lastPerformanceByExercise.get(exercise.name);
+            const imageUrl = exercise.imageUrl || exercise.gifUrl;
+            const canOpenDetail = hasExerciseApiDetail(exercise);
             return (
               <button
                 key={exercise.name}
                 onClick={() => {
                   setSelectedExercise(exercise);
-                  if (isWorkoutBuilder) selectForWorkout(exercise);
+                  if (isWorkoutBuilder) {
+                    selectForWorkout(exercise);
+                  } else if (canOpenDetail) {
+                    setDetailExercise(exercise);
+                  }
                 }}
-                className={`text-left bg-white rounded-2xl border p-4 transition-all hover:shadow-sm ${
+                className={`relative min-h-[164px] overflow-hidden text-left bg-white rounded-2xl border p-4 transition-all hover:shadow-sm ${
                   queuedForWorkout
                     ? "border-blue-500 bg-blue-50/40"
                     : selected
                       ? "border-neutral-400"
                       : "border-neutral-200 hover:border-neutral-300"
-                }`}
+                } ${imageUrl ? "pr-32 sm:pr-28" : ""}`}
               >
+                {imageUrl && (
+                  <div className="pointer-events-none absolute bottom-0 right-0 top-0 flex w-32 items-end justify-center overflow-hidden bg-gradient-to-l from-neutral-50 via-neutral-50/95 to-transparent sm:w-28">
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-contain object-bottom opacity-95"
+                    />
+                  </div>
+                )}
                 <div className="flex items-start justify-between gap-3">
                   <div className="w-11 h-11 rounded-xl bg-neutral-100 flex items-center justify-center">
                     <Icon className="w-5 h-5 text-neutral-500" />
@@ -379,6 +486,11 @@ export default function Exercises() {
                 <p className="mt-1 text-sm text-neutral-500">{exercise.muscleGroup}</p>
                 <p className="mt-1 text-xs font-medium text-neutral-400">{exercise.equipment || "Any equipment"}</p>
                 <p className="mt-3 text-xs text-neutral-400">Last used: {lastEntry ? formatSetPerformance(lastEntry.bestSet) : "No history"}</p>
+                {exercise.apiSource && (
+                  <span className="mt-3 inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-600">
+                    Media guide
+                  </span>
+                )}
                 {exercise.custom && <p className="mt-3 text-xs text-neutral-400">Custom exercise</p>}
               </button>
             );
@@ -408,12 +520,27 @@ export default function Exercises() {
               <p className="text-xs font-medium text-neutral-400 mt-1">{selectedExercise?.equipment || "Any equipment"}</p>
             </div>
             <button
-              onClick={() => toggleFavorite(selectedExercise.name)}
+              onClick={() => selectedExercise && toggleFavorite(selectedExercise.name)}
+              disabled={!selectedExercise}
               className="p-2 rounded-lg text-neutral-400 hover:bg-neutral-50 hover:text-neutral-900"
             >
               <Star className={`w-4 h-4 ${selectedExercise?.favorite ? "fill-neutral-900 text-neutral-900" : ""}`} />
             </button>
           </div>
+
+          {hasExerciseApiDetail(selectedExercise) && (
+            <button
+              type="button"
+              onClick={() => setDetailExercise(selectedExercise)}
+              className="mt-5 flex w-full items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-left text-sm font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Video className="h-4 w-4" />
+                View media and instructions
+              </span>
+              <ArrowLeft className="h-4 w-4 rotate-180" />
+            </button>
+          )}
 
           <div className="grid grid-cols-2 gap-3 mt-5">
             <div className="rounded-xl bg-neutral-50 p-3">
@@ -587,6 +714,179 @@ export default function Exercises() {
           </form>
         </div>
       )}
+
+      {detailExercise && (
+        <ExerciseDetailModal
+          exercise={detailExercise}
+          isWorkoutBuilder={isWorkoutBuilder}
+          selectedForWorkout={selectedForWorkout}
+          onClose={() => setDetailExercise(null)}
+          onToggleFavorite={toggleFavorite}
+          onSelectForWorkout={selectForWorkout}
+        />
+      )}
+    </div>
+  );
+}
+
+function ExerciseDetailModal({
+  exercise,
+  isWorkoutBuilder,
+  selectedForWorkout,
+  onClose,
+  onToggleFavorite,
+  onSelectForWorkout,
+}) {
+  const imageUrl = exercise.imageUrl || exercise.gifUrl;
+  const videoUrl = exercise.videoUrl;
+  const targetMuscles = asList(exercise.targetMuscles).length ? asList(exercise.targetMuscles) : [exercise.muscleGroup].filter(Boolean);
+  const secondaryMuscles = asList(exercise.secondaryMuscles);
+  const bodyParts = asList(exercise.bodyParts);
+  const instructions = asList(exercise.instructions);
+  const selected = selectedForWorkout.includes(exercise.name);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <section
+        className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-neutral-200 bg-white shadow-2xl sm:rounded-[2rem]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-100 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+            aria-label="Close exercise detail"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 px-3 text-center">
+            <h2 className="truncate text-base font-semibold text-neutral-950">{exercise.name}</h2>
+            <p className="text-xs font-medium text-neutral-500">{exercise.equipment || "Any equipment"}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onToggleFavorite(exercise.name)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+            aria-label={`Favorite ${exercise.name}`}
+          >
+            <Bookmark className={`h-5 w-5 ${exercise.favorite ? "fill-neutral-900 text-neutral-900" : ""}`} />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-4 pb-6 pt-4 sm:px-6">
+          <div className="overflow-hidden rounded-[1.75rem] border border-neutral-100 bg-neutral-50">
+            {videoUrl ? (
+              <video
+                src={videoUrl}
+                poster={imageUrl || undefined}
+                controls
+                muted
+                playsInline
+                preload="metadata"
+                className="aspect-[4/3] w-full bg-white object-contain"
+              />
+            ) : imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={`${exercise.name} demonstration`}
+                className="aspect-[4/3] w-full bg-white object-contain"
+              />
+            ) : (
+              <div className="flex aspect-[4/3] w-full items-center justify-center">
+                <ImageIcon className="h-10 w-10 text-neutral-300" />
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <MetricTile icon={Target} label="Primary" value={targetMuscles[0] || exercise.muscleGroup || "Unknown"} />
+            <MetricTile icon={Dumbbell} label="Equipment" value={exercise.equipment || "Any equipment"} />
+          </div>
+
+          {exercise.overview && (
+            <section className="rounded-2xl bg-neutral-50 p-4">
+              <h3 className="text-sm font-semibold text-neutral-950">Overview</h3>
+              <p className="mt-2 text-sm leading-6 text-neutral-600">{exercise.overview}</p>
+            </section>
+          )}
+
+          <section className="rounded-2xl border border-neutral-100 p-4">
+            <h3 className="text-sm font-semibold text-neutral-950">Target muscles</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {targetMuscles.map((muscle) => (
+                <span key={muscle} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  {muscle}
+                </span>
+              ))}
+              {bodyParts.map((part) => (
+                <span key={part} className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-600">
+                  {part}
+                </span>
+              ))}
+            </div>
+            {secondaryMuscles.length > 0 && (
+              <>
+                <h4 className="mt-4 text-xs font-semibold uppercase tracking-wider text-neutral-400">Secondary muscles</h4>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {secondaryMuscles.map((muscle) => (
+                    <span key={muscle} className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
+                      {muscle}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-neutral-100 p-4">
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-neutral-500" />
+              <h3 className="text-sm font-semibold text-neutral-950">How to perform</h3>
+            </div>
+            {instructions.length > 0 ? (
+              <ol className="mt-3 space-y-3">
+                {instructions.map((step, index) => (
+                  <li key={`${step}-${index}`} className="flex gap-3 text-sm leading-6 text-neutral-600">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-700">
+                      {index + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-3 text-sm text-neutral-500">Instructions will appear after this exercise is imported with full media data.</p>
+            )}
+          </section>
+
+          <button
+            type="button"
+            onClick={() => onSelectForWorkout(exercise)}
+            className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold transition-colors ${
+              selected && isWorkoutBuilder
+                ? "border border-neutral-200 bg-white text-neutral-800"
+                : "bg-blue-600 text-white hover:bg-blue-500"
+            }`}
+          >
+            {selected && isWorkoutBuilder ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {selected && isWorkoutBuilder ? "Selected for workout" : "Select for Workout"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricTile({ icon: Icon, label, value }) {
+  return (
+    <div className="rounded-2xl bg-neutral-50 p-4">
+      <Icon className="h-4 w-4 text-neutral-500" />
+      <p className="mt-3 text-xs font-medium text-neutral-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-neutral-950">{value}</p>
     </div>
   );
 }

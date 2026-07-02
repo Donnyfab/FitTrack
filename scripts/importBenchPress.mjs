@@ -1,4 +1,35 @@
 import { createClient } from '@supabase/supabase-js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const equalsIndex = trimmed.indexOf('=');
+    if (equalsIndex === -1) continue;
+
+    const key = trimmed.slice(0, equalsIndex).trim();
+    let value = trimmed.slice(equalsIndex + 1).trim();
+    if (!key || process.env[key] != null) continue;
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+}
+
+loadEnvFile(path.resolve(process.cwd(), '.env'));
+loadEnvFile(path.resolve(process.cwd(), '.env.local'));
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -9,12 +40,18 @@ const EXERCISEDB_BASE_URL =
 const EXERCISEDB_BENCH_PRESS_URL = process.env.EXERCISEDB_BENCH_PRESS_URL;
 const API_SOURCE = 'ascendapi';
 const BENCH_PRESS = 'Bench Press';
+const jsonOnly = process.argv.includes('--json-only') || process.env.BENCH_PRESS_IMPORT_OUTPUT === 'json';
 
 const required = [
-  ['SUPABASE_URL or VITE_SUPABASE_URL', SUPABASE_URL],
-  ['SUPABASE_SERVICE_ROLE_KEY', SUPABASE_SERVICE_ROLE_KEY],
   ['RAPIDAPI_KEY', RAPIDAPI_KEY],
 ];
+
+if (!jsonOnly) {
+  required.unshift(
+    ['SUPABASE_URL or VITE_SUPABASE_URL', SUPABASE_URL],
+    ['SUPABASE_SERVICE_ROLE_KEY', SUPABASE_SERVICE_ROLE_KEY]
+  );
+}
 
 const missing = required.filter(([, value]) => !value).map(([name]) => name);
 
@@ -22,9 +59,11 @@ if (missing.length > 0) {
   throw new Error(`Missing required env vars: ${missing.join(', ')}`);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+const supabase = jsonOnly
+  ? null
+  : createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
 
 function toArray(value) {
   if (!value) return [];
@@ -117,6 +156,7 @@ function normalizeExercise(row) {
   );
   const equipmentList = toArray(row.equipments || row.equipment || row.equipmentType);
   const instructions = normalizeInstructions(row.instructions || row.steps || row.howTo);
+  const firstTip = Array.isArray(row.tips) ? row.tips[0] : row.tips;
   const overview =
     normalizeText(row.overview || row.description || row.about || row.summary) ||
     'A compound chest press performed with a barbell while lying on a flat bench.';
@@ -127,7 +167,7 @@ function normalizeExercise(row) {
     equipment: equipmentList[0] || 'Barbell',
     icon: 'chest',
     form_tips:
-      normalizeText(row.tips?.[0] || row.tip || row.coachingCue) ||
+      normalizeText(firstTip || row.tip || row.coachingCue) ||
       'Keep your shoulder blades set, control the bar path, and press with stable wrists.',
     is_favorite: false,
     is_custom: false,
@@ -225,7 +265,12 @@ async function saveBenchPress(exercise) {
 }
 
 const exercise = await fetchBenchPress();
-const result = await saveBenchPress(exercise);
 
-console.log(`Bench Press ${result.action}: ${result.row.id}`);
-console.log(`Media: image=${Boolean(result.row.image_url)} video=${Boolean(result.row.video_url)} gif=${Boolean(result.row.gif_url)}`);
+if (jsonOnly) {
+  console.log(JSON.stringify(exercise, null, 2));
+} else {
+  const result = await saveBenchPress(exercise);
+
+  console.log(`Bench Press ${result.action}: ${result.row.id}`);
+  console.log(`Media: image=${Boolean(result.row.image_url)} video=${Boolean(result.row.video_url)} gif=${Boolean(result.row.gif_url)}`);
+}

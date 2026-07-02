@@ -34,17 +34,21 @@ drop policy if exists "Users delete own exercises" on public.user_exercises;
 
 create policy "Users view own and imported exercises"
   on public.user_exercises for select
-  using (auth.uid() = user_id or user_id is null);
+  to authenticated
+  using ((select auth.uid()) = user_id or user_id is null);
 
 create policy "Users insert own exercises"
   on public.user_exercises for insert
-  with check (auth.uid() = user_id);
+  to authenticated
+  with check ((select auth.uid()) = user_id);
 
 create policy "Users update own exercises"
   on public.user_exercises for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
 create policy "Users delete own exercises"
   on public.user_exercises for delete
-  using (auth.uid() = user_id);
+  to authenticated
+  using ((select auth.uid()) = user_id);

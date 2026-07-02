@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { readSelectedWorkoutExercises, writeSelectedWorkoutExercises } from "@/lib/workoutSelection";
@@ -19,6 +19,9 @@ import {
   HeartPulse,
   ImageIcon,
   ListChecks,
+  Maximize2,
+  Pause,
+  Play,
   Plus,
   Search,
   Star,
@@ -48,8 +51,138 @@ const hasExerciseApiDetail = (exercise) =>
         exercise?.overview ||
         asList(exercise?.instructions).length ||
         asList(exercise?.targetMuscles).length ||
-        asList(exercise?.secondaryMuscles).length)
+      asList(exercise?.secondaryMuscles).length)
   );
+
+const MUSCLE_MAP_BASE_IMAGE = "/images/muscle-map-base.png";
+
+const muscleHighlightAreas = {
+  chest: [
+    { left: "25.5%", top: "20.8%", width: "8.3%", height: "8%", rotate: "-8deg" },
+    { left: "33.9%", top: "20.8%", width: "8.3%", height: "8%", rotate: "8deg" },
+  ],
+  "upper chest": [
+    { left: "27%", top: "19.8%", width: "6.5%", height: "3.8%", rotate: "-8deg" },
+    { left: "34.3%", top: "19.8%", width: "6.5%", height: "3.8%", rotate: "8deg" },
+  ],
+  "front delts": [
+    { left: "20.7%", top: "22.3%", width: "5%", height: "6.7%", rotate: "24deg" },
+    { left: "43.1%", top: "22.3%", width: "5%", height: "6.7%", rotate: "-24deg" },
+  ],
+  shoulders: [
+    { left: "20.2%", top: "21.8%", width: "5.7%", height: "7.5%", rotate: "20deg" },
+    { left: "42.7%", top: "21.8%", width: "5.7%", height: "7.5%", rotate: "-20deg" },
+    { left: "62.2%", top: "22.4%", width: "5.8%", height: "7.2%", rotate: "-22deg" },
+    { left: "86%", top: "22.4%", width: "5.8%", height: "7.2%", rotate: "22deg" },
+  ],
+  triceps: [
+    { left: "16.8%", top: "28.2%", width: "4.5%", height: "10.5%", rotate: "8deg" },
+    { left: "47.3%", top: "28.2%", width: "4.5%", height: "10.5%", rotate: "-8deg" },
+    { left: "62.4%", top: "27%", width: "5.4%", height: "11%", rotate: "-12deg" },
+    { left: "86.1%", top: "27%", width: "5.4%", height: "11%", rotate: "12deg" },
+  ],
+  biceps: [
+    { left: "17.7%", top: "27.1%", width: "4.3%", height: "9.4%", rotate: "10deg" },
+    { left: "46.4%", top: "27.1%", width: "4.3%", height: "9.4%", rotate: "-10deg" },
+  ],
+  abs: [
+    { left: "29.1%", top: "29.2%", width: "10%", height: "18.8%", rotate: "0deg" },
+  ],
+  back: [
+    { left: "68.5%", top: "19.5%", width: "16.5%", height: "22%", rotate: "0deg" },
+  ],
+  lats: [
+    { left: "63.8%", top: "25.5%", width: "8.8%", height: "17.5%", rotate: "10deg" },
+    { left: "80.6%", top: "25.5%", width: "8.8%", height: "17.5%", rotate: "-10deg" },
+  ],
+  traps: [
+    { left: "70.8%", top: "17.4%", width: "10.5%", height: "10.5%", rotate: "0deg" },
+  ],
+  glutes: [
+    { left: "68.6%", top: "48.6%", width: "8.9%", height: "10.4%", rotate: "-8deg" },
+    { left: "77%", top: "48.6%", width: "8.9%", height: "10.4%", rotate: "8deg" },
+  ],
+  quads: [
+    { left: "24.2%", top: "51.2%", width: "8.5%", height: "23%", rotate: "5deg" },
+    { left: "35.8%", top: "51.2%", width: "8.5%", height: "23%", rotate: "-5deg" },
+  ],
+  hamstrings: [
+    { left: "66.7%", top: "59%", width: "8.2%", height: "19.5%", rotate: "-4deg" },
+    { left: "79.6%", top: "59%", width: "8.2%", height: "19.5%", rotate: "4deg" },
+  ],
+  calves: [
+    { left: "25.4%", top: "75.5%", width: "6.5%", height: "13.5%", rotate: "3deg" },
+    { left: "37.1%", top: "75.5%", width: "6.5%", height: "13.5%", rotate: "-3deg" },
+    { left: "67.9%", top: "76.2%", width: "6.4%", height: "13.5%", rotate: "-2deg" },
+    { left: "80%", top: "76.2%", width: "6.4%", height: "13.5%", rotate: "2deg" },
+  ],
+  forearms: [
+    { left: "13.3%", top: "39%", width: "5.1%", height: "14.2%", rotate: "7deg" },
+    { left: "50.2%", top: "39%", width: "5.1%", height: "14.2%", rotate: "-7deg" },
+    { left: "58.4%", top: "39%", width: "5.2%", height: "14.2%", rotate: "-7deg" },
+    { left: "90.4%", top: "39%", width: "5.2%", height: "14.2%", rotate: "7deg" },
+  ],
+  neck: [
+    { left: "29.7%", top: "13.7%", width: "8.2%", height: "6.8%", rotate: "0deg" },
+    { left: "73.4%", top: "13.7%", width: "8.2%", height: "6.8%", rotate: "0deg" },
+  ],
+};
+
+const normalizeMuscleName = (value = "") =>
+  String(value)
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const highlightKeyForMuscle = (muscle) => {
+  const normalized = normalizeMuscleName(muscle);
+  if (!normalized) return null;
+  if (normalized.includes("clavicular") || normalized.includes("upper chest")) return "upper chest";
+  if (normalized.includes("pectoralis") || normalized.includes("pec") || normalized === "chest") return "chest";
+  if (normalized.includes("anterior deltoid") || normalized.includes("front delt")) return "front delts";
+  if (normalized.includes("deltoid") || normalized.includes("shoulder")) return "shoulders";
+  if (normalized.includes("triceps")) return "triceps";
+  if (normalized.includes("biceps")) return "biceps";
+  if (normalized.includes("latissimus") || normalized.includes("lat ")) return "lats";
+  if (normalized.includes("trapezius") || normalized.includes("trap")) return "traps";
+  if (normalized.includes("back")) return "back";
+  if (normalized.includes("abdom") || normalized.includes("abs") || normalized.includes("core")) return "abs";
+  if (normalized.includes("glute") || normalized.includes("hip")) return "glutes";
+  if (normalized.includes("quad") || normalized.includes("quadriceps")) return "quads";
+  if (normalized.includes("hamstring")) return "hamstrings";
+  if (normalized.includes("calf") || normalized.includes("calves")) return "calves";
+  if (normalized.includes("forearm")) return "forearms";
+  if (normalized.includes("neck")) return "neck";
+  return null;
+};
+
+const buildMuscleHighlights = (targetMuscles, secondaryMuscles) => {
+  const highlights = [];
+  const primaryKeys = new Set();
+  const addMuscle = (muscle, type) => {
+    const key = highlightKeyForMuscle(muscle);
+    if (!key || !muscleHighlightAreas[key]) return;
+    if (type === "primary") primaryKeys.add(key);
+    if (type === "secondary" && primaryKeys.has(key)) return;
+    const id = `${type}-${key}`;
+    if (highlights.some((highlight) => highlight.id === id)) return;
+    highlights.push({ id, key, type, label: muscle, areas: muscleHighlightAreas[key] });
+  };
+
+  targetMuscles.forEach((muscle) => addMuscle(muscle, "primary"));
+  secondaryMuscles.forEach((muscle) => addMuscle(muscle, "secondary"));
+  return highlights;
+};
+
+const shortenOverview = (overview, exercise) => {
+  const fallback = `${exercise.name} is a ${exercise.equipment || "training"} movement focused on ${exercise.muscleGroup || "the target muscles"}. Use controlled reps and keep the setup consistent.`;
+  const source = typeof overview === "string" && overview.trim() ? overview.trim() : fallback;
+  const sentences = source.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [source];
+  const shortText = sentences.slice(0, 2).join(" ").replace(/\s+/g, " ").trim();
+  if (shortText.length <= 240) return shortText;
+  return `${shortText.slice(0, 237).trim()}...`;
+};
 
 const mergeApiExerciseFields = (exercise, imported) => {
   if (!imported) return exercise;
@@ -737,13 +870,15 @@ function ExerciseDetailModal({
   onToggleFavorite,
   onSelectForWorkout,
 }) {
-  const imageUrl = exercise.imageUrl || exercise.gifUrl;
+  const imageUrl = exercise.imageUrl;
+  const gifUrl = exercise.gifUrl;
   const videoUrl = exercise.videoUrl;
   const targetMuscles = asList(exercise.targetMuscles).length ? asList(exercise.targetMuscles) : [exercise.muscleGroup].filter(Boolean);
   const secondaryMuscles = asList(exercise.secondaryMuscles);
   const bodyParts = asList(exercise.bodyParts);
   const instructions = asList(exercise.instructions);
   const selected = selectedForWorkout.includes(exercise.name);
+  const overview = shortenOverview(exercise.overview, exercise);
 
   return (
     <div
@@ -778,68 +913,40 @@ function ExerciseDetailModal({
         </div>
 
         <div className="space-y-5 px-4 pb-6 pt-4 sm:px-6">
-          <div className="overflow-hidden rounded-[1.75rem] border border-neutral-100 bg-neutral-50">
-            {videoUrl ? (
-              <video
-                src={videoUrl}
-                poster={imageUrl || undefined}
-                controls
-                muted
-                playsInline
-                preload="metadata"
-                className="aspect-[4/3] w-full bg-white object-contain"
-              />
-            ) : imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={`${exercise.name} demonstration`}
-                className="aspect-[4/3] w-full bg-white object-contain"
-              />
-            ) : (
-              <div className="flex aspect-[4/3] w-full items-center justify-center">
-                <ImageIcon className="h-10 w-10 text-neutral-300" />
-              </div>
-            )}
-          </div>
+          <ExerciseMediaViewer
+            name={exercise.name}
+            imageUrl={imageUrl}
+            videoUrl={videoUrl}
+            gifUrl={gifUrl}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <MetricTile icon={Target} label="Primary" value={targetMuscles[0] || exercise.muscleGroup || "Unknown"} />
             <MetricTile icon={Dumbbell} label="Equipment" value={exercise.equipment || "Any equipment"} />
           </div>
 
-          {exercise.overview && (
-            <section className="rounded-2xl bg-neutral-50 p-4">
-              <h3 className="text-sm font-semibold text-neutral-950">Overview</h3>
-              <p className="mt-2 text-sm leading-6 text-neutral-600">{exercise.overview}</p>
-            </section>
-          )}
-
-          <section className="rounded-2xl border border-neutral-100 p-4">
-            <h3 className="text-sm font-semibold text-neutral-950">Target muscles</h3>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {targetMuscles.map((muscle) => (
-                <span key={muscle} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                  {muscle}
-                </span>
-              ))}
-              {bodyParts.map((part) => (
-                <span key={part} className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-600">
-                  {part}
-                </span>
-              ))}
-            </div>
-            {secondaryMuscles.length > 0 && (
-              <>
-                <h4 className="mt-4 text-xs font-semibold uppercase tracking-wider text-neutral-400">Secondary muscles</h4>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {secondaryMuscles.map((muscle) => (
-                    <span key={muscle} className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
-                      {muscle}
+          <section className="rounded-[1.75rem] border border-neutral-100 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-neutral-950">Target muscles</h3>
+                <p className="mt-1 text-xs text-neutral-500">Red shows primary work. Blue shows supporting muscles.</p>
+              </div>
+              {bodyParts.length > 0 && (
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  {bodyParts.map((part) => (
+                    <span key={part} className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold text-neutral-600">
+                      {part}
                     </span>
                   ))}
                 </div>
-              </>
-            )}
+              )}
+            </div>
+            <MuscleHighlightMap targetMuscles={targetMuscles} secondaryMuscles={secondaryMuscles} />
+          </section>
+
+          <section className="rounded-2xl bg-neutral-50 p-4">
+            <h3 className="text-sm font-semibold text-neutral-950">Overview</h3>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">{overview}</p>
           </section>
 
           <section className="rounded-2xl border border-neutral-100 p-4">
@@ -877,6 +984,201 @@ function ExerciseDetailModal({
           </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function ExerciseMediaViewer({ name, imageUrl, videoUrl, gifUrl }) {
+  const mediaRef = useRef(null);
+  const shellRef = useRef(null);
+  const canAnimate = Boolean(videoUrl || gifUrl);
+  const hasMedia = Boolean(videoUrl || gifUrl || imageUrl);
+  const [isPlaying, setIsPlaying] = useState(canAnimate);
+
+  useEffect(() => {
+    setIsPlaying(canAnimate);
+    const media = mediaRef.current;
+    if (!videoUrl || !media?.play) return;
+
+    media
+      .play()
+      .then(() => setIsPlaying(true))
+      .catch(() => setIsPlaying(false));
+  }, [canAnimate, videoUrl]);
+
+  const togglePlayback = async () => {
+    if (!canAnimate) return;
+    if (videoUrl && mediaRef.current) {
+      if (mediaRef.current.paused) {
+        try {
+          await mediaRef.current.play();
+          setIsPlaying(true);
+        } catch {
+          setIsPlaying(false);
+        }
+      } else {
+        mediaRef.current.pause();
+        setIsPlaying(false);
+      }
+      return;
+    }
+    setIsPlaying((current) => !current);
+  };
+
+  const openFullscreen = () => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const requestFullscreen =
+      shell.requestFullscreen ||
+      shell.webkitRequestFullscreen ||
+      shell.msRequestFullscreen;
+    if (requestFullscreen) {
+      requestFullscreen.call(shell);
+      return;
+    }
+    if (mediaRef.current?.webkitEnterFullscreen) {
+      mediaRef.current.webkitEnterFullscreen();
+    }
+  };
+
+  return (
+    <div ref={shellRef} className="relative overflow-hidden rounded-[1.75rem] border border-neutral-100 bg-white shadow-sm">
+      <div className="relative flex aspect-[4/3] w-full items-center justify-center bg-white">
+        {videoUrl ? (
+          <video
+            ref={mediaRef}
+            src={videoUrl}
+            poster={imageUrl || undefined}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            className="h-full w-full object-contain"
+          />
+        ) : gifUrl ? (
+          <img
+            src={isPlaying ? gifUrl : imageUrl || gifUrl}
+            alt={`${name} demonstration`}
+            className="h-full w-full object-contain"
+          />
+        ) : imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={`${name} demonstration`}
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-neutral-50">
+            <ImageIcon className="h-10 w-10 text-neutral-300" />
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={togglePlayback}
+        disabled={!canAnimate}
+        className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white/85 text-neutral-900 shadow-sm backdrop-blur-md transition hover:bg-white disabled:cursor-default disabled:text-neutral-300"
+        aria-label={isPlaying ? `Pause ${name} demo` : `Play ${name} demo`}
+      >
+        {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}
+      </button>
+
+      {hasMedia && (
+        <button
+          type="button"
+          onClick={openFullscreen}
+          className="absolute bottom-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white/85 text-neutral-900 shadow-sm backdrop-blur-md transition hover:bg-white"
+          aria-label={`View ${name} media fullscreen`}
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MuscleHighlightMap({ targetMuscles, secondaryMuscles }) {
+  const highlights = buildMuscleHighlights(targetMuscles, secondaryMuscles);
+
+  return (
+    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(180px,0.8fr)]">
+      <div className="relative overflow-hidden rounded-3xl border border-neutral-100 bg-neutral-50">
+        <img
+          src={MUSCLE_MAP_BASE_IMAGE}
+          alt="Front and back muscle anatomy"
+          className="block w-full select-none object-contain"
+          draggable="false"
+        />
+        {highlights.map((highlight) =>
+          highlight.areas.map((area, index) => (
+            <span
+              key={`${highlight.id}-${index}`}
+              className="pointer-events-none absolute rounded-full"
+              style={{
+                left: area.left,
+                top: area.top,
+                width: area.width,
+                height: area.height,
+                transform: `rotate(${area.rotate || "0deg"})`,
+                background:
+                  highlight.type === "primary"
+                    ? "rgba(239, 68, 68, 0.72)"
+                    : "rgba(37, 99, 235, 0.58)",
+                boxShadow:
+                  highlight.type === "primary"
+                    ? "0 0 18px rgba(239, 68, 68, 0.42)"
+                    : "0 0 16px rgba(37, 99, 235, 0.35)",
+                mixBlendMode: "multiply",
+              }}
+            />
+          ))
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <MuscleLegend
+          title="Primary muscles"
+          muscles={targetMuscles}
+          colorClass="bg-red-500"
+          emptyText="No primary muscles listed."
+        />
+        <MuscleLegend
+          title="Secondary muscles"
+          muscles={secondaryMuscles}
+          colorClass="bg-blue-600"
+          emptyText="No secondary muscles listed."
+        />
+        {highlights.length === 0 && (
+          <p className="rounded-2xl bg-neutral-50 p-3 text-xs leading-5 text-neutral-500">
+            This exercise is saved, but its muscles have not been mapped to the visual anatomy layer yet.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MuscleLegend({ title, muscles, colorClass, emptyText }) {
+  return (
+    <div className="rounded-2xl bg-neutral-50 p-3">
+      <div className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${colorClass}`} />
+        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">{title}</p>
+      </div>
+      {muscles.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {muscles.map((muscle) => (
+            <span key={muscle} className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm">
+              {muscle}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-neutral-400">{emptyText}</p>
+      )}
     </div>
   );
 }

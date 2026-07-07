@@ -68,6 +68,7 @@ export function parseImportArgs(argv = process.argv.slice(2)) {
     help: false,
     limit: null,
     name: null,
+    fromReport: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -89,6 +90,11 @@ export function parseImportArgs(argv = process.argv.slice(2)) {
       index += 1;
     } else if (arg.startsWith("--name=")) {
       args.name = arg.slice("--name=".length);
+    } else if (arg === "--from-report") {
+      args.fromReport = argv[index + 1] || null;
+      index += 1;
+    } else if (arg.startsWith("--from-report=")) {
+      args.fromReport = arg.slice("--from-report=".length);
     }
   }
 
@@ -108,6 +114,7 @@ Options:
   --json-only     Fetch, normalize, and report API data without Supabase writes.
   --limit <n>     Process only the first n matching local catalog exercises.
   --name <text>   Process catalog exercises whose names include this text.
+  --from-report   Reuse matched API IDs from a prior report instead of scanning.
   --help          Show this help text.
 
 Required environment for API calls:
@@ -653,6 +660,36 @@ async function fetchExerciseDetail(candidate, config) {
   return candidate;
 }
 
+export async function fetchExerciseDetailById(
+  apiExerciseId,
+  config,
+  fallbackExercise = {},
+) {
+  const id = normalizeText(apiExerciseId);
+  if (!id) throw new Error("Missing API exercise ID");
+
+  const candidate = {
+    id,
+    exerciseId: id,
+    exercise_id: id,
+    apiExerciseId: id,
+    api_exercise_id: id,
+    name: normalizeText(fallbackExercise.apiName) || normalizeText(fallbackExercise.name) || id,
+  };
+
+  const detail = await fetchExerciseDetail(candidate, config);
+  const exercise = normalizeExercisePayload(detail, fallbackExercise);
+
+  return {
+    exercise: {
+      ...exercise,
+      api_source: API_SOURCE,
+      api_exercise_id: id,
+    },
+    detailPayload: detail,
+  };
+}
+
 function summarizeCandidates(scoredCandidates) {
   return scoredCandidates.slice(0, 5).map((candidate) => ({
     apiExerciseId: exerciseIdFor(candidate.row),
@@ -894,6 +931,16 @@ export function formatReportMarkdown(report) {
   lines.push(`Mode: ${report.mode.jsonOnly ? "json-only" : report.mode.dryRun ? "dry-run" : "write"}`);
   if (report.mode.name) lines.push(`Name filter: ${report.mode.name}`);
   if (report.mode.limit) lines.push(`Limit: ${report.mode.limit}`);
+  if (report.mode.fromReport) lines.push(`Source report: ${report.mode.fromReport}`);
+  if (report.mode.sourceMatchedRows !== undefined) {
+    lines.push(`Source matched rows: ${report.mode.sourceMatchedRows}`);
+  }
+  if (report.mode.uniqueApiIds !== undefined) {
+    lines.push(`Unique API IDs: ${report.mode.uniqueApiIds}`);
+  }
+  if (report.mode.duplicateAliases !== undefined) {
+    lines.push(`Duplicate aliases: ${report.mode.duplicateAliases}`);
+  }
   lines.push("");
   lines.push("## Summary");
   lines.push("");

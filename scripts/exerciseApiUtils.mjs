@@ -222,25 +222,54 @@ export function toDisplayList(value) {
     });
 }
 
+function isUrl(value) {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
+}
+
+function collectUrls(value, urls = []) {
+  if (value === null || value === undefined || value === "") return urls;
+  if (isUrl(value)) {
+    urls.push(value);
+    return urls;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectUrls(item, urls));
+    return urls;
+  }
+  if (typeof value !== "object") return urls;
+
+  const preferredKeys = [
+    "url",
+    "src",
+    "href",
+    "imageUrl",
+    "image_url",
+    "videoUrl",
+    "video_url",
+    "gifUrl",
+    "gif_url",
+    "image",
+    "video",
+    "gif",
+    "thumbnail",
+    "poster",
+    "1080p",
+    "720p",
+    "480p",
+    "360p",
+  ];
+
+  preferredKeys.forEach((key) => collectUrls(value[key], urls));
+  Object.entries(value).forEach(([key, nested]) => {
+    if (!preferredKeys.includes(key)) collectUrls(nested, urls);
+  });
+  return urls;
+}
+
 export function firstUrl(...values) {
   for (const value of values) {
-    const items = toArray(value);
-    for (const item of items) {
-      if (typeof item === "string" && /^https?:\/\//i.test(item)) return item;
-      if (item && typeof item === "object") {
-        const nested =
-          item.url ||
-          item.src ||
-          item.href ||
-          item.image ||
-          item.video ||
-          item.gif ||
-          item.thumbnail;
-        if (typeof nested === "string" && /^https?:\/\//i.test(nested)) {
-          return nested;
-        }
-      }
-    }
+    const url = collectUrls(value)[0];
+    if (url) return url;
   }
   return null;
 }
@@ -502,11 +531,18 @@ export function scoreExerciseCandidate(catalogExercise, row) {
       row?.image_url,
       row?.image,
       row?.images,
+      row?.imageUrls,
       row?.thumbnail,
+      row?.videoUrl,
+      row?.video_url,
+      row?.video,
+      row?.videos,
+      row?.videoUrls,
       row?.gifUrl,
       row?.gif_url,
       row?.gif,
       row?.gifs,
+      row?.gifUrls,
     )
   ) {
     score += 4;
@@ -577,13 +613,28 @@ export async function fetchExerciseCandidates(catalogExercise, config, options =
 async function fetchExerciseDetail(candidate, config) {
   const id = exerciseIdFor(candidate);
   const sourceUrl = candidate._sourceUrl;
-  if (!id || !sourceUrl) return candidate;
+  if (!id) return candidate;
 
-  const origin = new URL(sourceUrl).origin;
-  const detailUrls = uniqueUrls([
-    createApiUrl(origin, `/api/v1/exercises/${encodeURIComponent(id)}`),
-    createApiUrl(origin, `/exercises/${encodeURIComponent(id)}`),
+  const sourceOrigin = (() => {
+    if (!sourceUrl) return null;
+    try {
+      return new URL(sourceUrl).origin;
+    } catch {
+      return null;
+    }
+  })();
+  const detailBases = uniqueUrls([
+    sourceOrigin,
+    config.exerciseDbBaseUrl,
+    `https://${config.rapidApiHost}`,
+    `https://${config.ascendApiDocsHost}`,
   ]);
+  const detailUrls = uniqueUrls(
+    detailBases.flatMap((baseUrl) => [
+      createApiUrl(baseUrl, `/api/v1/exercises/${encodeURIComponent(id)}`),
+      createApiUrl(baseUrl, `/exercises/${encodeURIComponent(id)}`),
+    ]),
+  );
 
   for (const url of detailUrls) {
     try {
@@ -593,7 +644,7 @@ async function fetchExerciseDetail(candidate, config) {
       );
       const detail =
         rows.find((row) => exerciseIdFor(row) === id) || rows[0] || null;
-      if (detail) return { ...candidate, ...detail, _sourceUrl: sourceUrl };
+      if (detail) return { ...candidate, ...detail, _sourceUrl: sourceUrl || url };
     } catch {
       // Search payloads often include enough data. Detail failures are non-fatal.
     }

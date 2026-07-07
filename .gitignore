@@ -30,3 +30,7 @@ dist-ssr
 
 .vite
 .vercel
+
+# Generated ExerciseDB/AscendAPI import reports
+reports/*
+!reports/.gitkeep

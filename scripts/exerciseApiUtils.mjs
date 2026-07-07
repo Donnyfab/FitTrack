@@ -643,7 +643,7 @@ export async function findConfidentExerciseMatch(
   const second = scored[1];
   const gap = second ? top.score.score - second.score.score : top.score.score;
   const confident =
-    (top.score.exactish && top.score.score >= 76) ||
+    (top.score.exactish && top.score.score >= 70) ||
     (top.score.score >= 90 && gap >= 12);
 
   if (!confident) {

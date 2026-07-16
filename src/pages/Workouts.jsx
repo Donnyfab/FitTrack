@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
+import { toast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/workoutUtils";
 import { countSets } from "@/lib/fittrackDemoData";
 import {
+  createWorkoutDraftFromTemplate,
   formatDuration,
   getCompletedSetCount,
   getStarterRoutine,
@@ -51,6 +53,7 @@ export default function Workouts() {
   const [swipedWorkoutId, setSwipedWorkoutId] = useState(null);
   const [swipeState, setSwipeState] = useState(null);
   const [startingTemplateId, setStartingTemplateId] = useState(null);
+  const [repeatingWorkoutId, setRepeatingWorkoutId] = useState(null);
 
   useEffect(() => {
     loadWorkouts();
@@ -113,8 +116,26 @@ export default function Workouts() {
     navigate("/workouts/new");
   };
 
-  const repeatWorkout = (workout) => {
-    navigate(`/workouts/${workout.id}/edit?repeat=weekly`);
+  const repeatWorkout = async (workout) => {
+    if (repeatingWorkoutId) return;
+    setRepeatingWorkoutId(workout.id);
+    try {
+      const repeatedWorkout = createWorkoutDraftFromTemplate(workout, {
+        date: new Date().toISOString().split("T")[0],
+        status: "planned",
+      });
+      const created = await base44.entities.Workout.create(repeatedWorkout);
+      navigate(`/workouts/${created.id}`);
+    } catch (error) {
+      console.error("Failed to repeat workout", error);
+      toast({
+        title: "Could not restart workout",
+        description: "FitTrack could not create the new session. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setRepeatingWorkoutId(null);
+    }
   };
 
   const createStarter = (day) => {
@@ -489,8 +510,14 @@ export default function Workouts() {
                         {workout.template && <span className="text-xs text-neutral-400">Template</span>}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button onClick={() => repeatWorkout(workout)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800">
-                          <RotateCcw className="h-3.5 w-3.5" /> Repeat
+                        <button
+                          type="button"
+                          onClick={() => repeatWorkout(workout)}
+                          disabled={Boolean(repeatingWorkoutId)}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-800 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <RotateCcw className={`h-3.5 w-3.5 ${repeatingWorkoutId === workout.id ? "animate-spin" : ""}`} />
+                          {repeatingWorkoutId === workout.id ? "Starting..." : "Repeat"}
                         </button>
                         <Link to={`/workouts/${workout.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
                           <Play className="h-3.5 w-3.5" /> Quick start

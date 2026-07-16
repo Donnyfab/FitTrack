@@ -5,7 +5,6 @@ import { useAuth } from "@/lib/AuthContext";
 import { formatDate } from "@/lib/workoutUtils";
 import { countSets } from "@/lib/fittrackDemoData";
 import {
-  createWorkoutDraftFromTemplate,
   formatDuration,
   getCompletedSetCount,
   getStarterRoutine,
@@ -115,11 +114,7 @@ export default function Workouts() {
   };
 
   const repeatWorkout = (workout) => {
-    openDraft(createWorkoutDraftFromTemplate(workout, {
-      date: new Date().toISOString().split("T")[0],
-      status: "planned",
-      notes: `Repeated from ${workout.name}.`,
-    }));
+    navigate(`/workouts/${workout.id}/edit?repeat=weekly`);
   };
 
   const createStarter = (day) => {

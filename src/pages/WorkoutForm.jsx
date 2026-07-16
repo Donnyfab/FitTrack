@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,9 @@ function mergeSelectedExercises(existingExercises, selectedExerciseNames) {
 export default function WorkoutForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isEdit = !!id;
+  const isRepeatSetup = isEdit && searchParams.get("repeat") === "weekly";
   const [name, setName] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [muscleGroups, setMuscleGroups] = useState([]);
@@ -73,6 +75,7 @@ export default function WorkoutForm() {
   const [template, setTemplate] = useState(false);
   const [repeatWeekly, setRepeatWeekly] = useState(false);
   const [repeatDayOfWeek, setRepeatDayOfWeek] = useState(new Date().getDay());
+  const [recurringScheduleId, setRecurringScheduleId] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -111,6 +114,14 @@ export default function WorkoutForm() {
   const loadWorkout = async () => {
     try {
       const workout = await base44.entities.Workout.get(id);
+      let recurringSchedule = null;
+      if (workout.recurringScheduleId) {
+        try {
+          recurringSchedule = await base44.entities.RecurringSchedule.get(workout.recurringScheduleId);
+        } catch {
+          recurringSchedule = null;
+        }
+      }
       setName(workout.name);
       setDate(workout.date);
       setMuscleGroups(parseMuscleGroups(workout.muscleGroup));
@@ -119,6 +130,13 @@ export default function WorkoutForm() {
       setCalories(workout.calories?.toString() || "");
       setFavorite(Boolean(workout.favorite));
       setTemplate(Boolean(workout.template));
+      setRecurringScheduleId(recurringSchedule?.id || null);
+      setRepeatWeekly(isRepeatSetup || Boolean(recurringSchedule?.active));
+      setRepeatDayOfWeek(
+        Number.isInteger(recurringSchedule?.dayOfWeek)
+          ? recurringSchedule.dayOfWeek
+          : new Date(`${workout.date}T00:00:00`).getDay()
+      );
       setExercises(workout.exercises?.length ? workout.exercises.map(normalizeExercise) : []);
     } finally { setLoading(false); }
   };
@@ -184,7 +202,7 @@ export default function WorkoutForm() {
         ? await base44.entities.Workout.update(id, data)
         : await base44.entities.Workout.create(data);
       if (repeatWeekly && savedWorkout?.id) {
-        const schedule = await base44.entities.RecurringSchedule.create({
+        const scheduleData = {
           dayOfWeek: repeatDayOfWeek,
           name,
           muscleGroup: muscleGroupLabel,
@@ -193,10 +211,19 @@ export default function WorkoutForm() {
           startDate: date,
           endDate: null,
           active: true,
-        });
+        };
+        const schedule = recurringScheduleId
+          ? await base44.entities.RecurringSchedule.update(recurringScheduleId, scheduleData)
+          : await base44.entities.RecurringSchedule.create(scheduleData);
         await base44.entities.Workout.update(savedWorkout.id, {
           recurringScheduleId: schedule.id,
           scheduledFor: date,
+        });
+      } else if (recurringScheduleId && savedWorkout?.id) {
+        await base44.entities.RecurringSchedule.update(recurringScheduleId, { active: false });
+        await base44.entities.Workout.update(savedWorkout.id, {
+          recurringScheduleId: null,
+          scheduledFor: null,
         });
       }
       clearSelectedWorkoutExercises();
@@ -222,7 +249,9 @@ export default function WorkoutForm() {
       <Link to={isEdit ? `/workouts/${id}` : "/workouts"} className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900 transition-colors mb-6">
         <ArrowLeft className="w-4 h-4" /> {isEdit ? "Workout" : "Workouts"}
       </Link>
-      <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight mb-8">{isEdit ? "Edit Workout" : "New Workout"}</h1>
+      <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight mb-8">
+        {isRepeatSetup ? "Repeat Workout" : isEdit ? "Edit Workout" : "New Workout"}
+      </h1>
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
           <div><label className={labelClass}>Workout Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Push Day, Leg Day, Upper Body" required className="h-11" /></div>
@@ -401,7 +430,9 @@ export default function WorkoutForm() {
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="How did the workout feel? Any PRs?" rows="3" className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg text-sm resize-none focus:outline-none focus:border-neutral-400 transition-colors" />
         </div>
         <div className="flex items-center gap-3">
-          <Button type="submit" disabled={saving || !name} className="h-11 px-6 flex-1 sm:flex-none">{saving ? "Saving..." : isEdit ? "Save Changes" : "Create Workout"}</Button>
+          <Button type="submit" disabled={saving || !name} className="h-11 px-6 flex-1 sm:flex-none">
+            {saving ? "Saving..." : isRepeatSetup ? "Save Repeat" : isEdit ? "Save Changes" : "Create Workout"}
+          </Button>
           <Link to={isEdit ? `/workouts/${id}` : "/workouts"}><Button type="button" variant="outline" className="h-11 px-6">Cancel</Button></Link>
         </div>
       </form>
